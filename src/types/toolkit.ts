@@ -1,9 +1,26 @@
 export type WorkspaceView = 'agent' | 'transcribe' | 'download' | 'convert' | 'settings';
 
 export type ComputeProvider = 'colab-t4' | 'kaggle-t4';
+export type ComputeStatus = 'offline' | 'starting' | 'online' | 'stopping' | 'error';
+export type ColabGpuSpec = 'T4' | 'L4' | 'A100';
+export type IdleShutdownMinutes = 10 | 15 | 30;
 export type WhisperPresetId = 'fast' | 'balanced' | 'accurate';
 export type TranscriptOutputFormat = 'srt' | 'md_plain' | 'txt';
 export type TranscriptLanguage = 'auto' | 'zh' | 'en';
+
+export interface ComputeRuntimeState {
+  status: ComputeStatus;
+  provider: ComputeProvider;
+  gpu: ColabGpuSpec | 'T4 x2';
+  model: string;
+  startedAt: number | null;
+  lastActivityAt: number | null;
+  idleRemainingSeconds: number | null;
+  orphanColabCount: number;
+  colabAuthed: boolean;
+  kaggleAuthed: boolean;
+  errorMessage?: string | null;
+}
 
 export type MediaKind = 'audio' | 'video';
 
@@ -172,6 +189,9 @@ export interface EndpointConfig {
   runtimeMode: 'mock' | 'custom_endpoint';
   colabBridgeUrl: string;
   kaggleBridgeUrl: string;
+  colabGpuSpec: ColabGpuSpec;
+  autoShutdownEnabled: boolean;
+  autoShutdownMinutes: IdleShutdownMinutes;
   ffmpegAutoExtract: boolean;
   downloaderRpcUrl: string;
   ytdlpPath: string;
@@ -183,6 +203,9 @@ export interface EndpointConfig {
   chromeBridgeAutoStart: boolean;
   clipboardSniffEnabled: boolean;
   converterApiUrl: string;
+  githubRepo: string;
+  githubBranch: string;
+  autoCheckUpdate: boolean;
 }
 
 export interface ToastNotice {

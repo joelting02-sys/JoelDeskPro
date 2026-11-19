@@ -24,17 +24,20 @@ import {
   WorkspaceView,
 } from '../types/toolkit';
 import {
-  COMPUTE_PROVIDERS,
-  WHISPER_PRESETS,
   detectFileCategory,
   extractCleanUrl,
   formatBytes,
   formatLabel,
   getAvailableTargetFormats,
+  getComputeProviders,
   getFileExtension,
+  getWhisperPresets,
 } from '../services/toolkitAdapter';
+import { AppLanguage, TRANSLATIONS } from '../i18n';
+import { BrandLogo } from './BrandLogo';
 
 interface AgentViewProps {
+  lang: AppLanguage;
   messages: AgentMessage[];
   onSendMessage: (text: string, attachments: AttachedFileItem[]) => void;
   onUpdateAction: (messageId: string, updater: (action: AgentActionPayload) => AgentActionPayload) => void;
@@ -43,44 +46,8 @@ interface AgentViewProps {
   onCopyText: (text: string, label: string) => void;
 }
 
-const QUICK_PROMPTS: Array<{
-  title: string;
-  subtitle: string;
-  text: string;
-  attachment?: AttachedFileItem;
-}> = [
-  {
-    title: '杂乱文本精准提链',
-    subtitle: '自动截取 http 链接并多线程下载',
-    text: '【超清教程合集】速存防失效 https://cdn.example.com/courses/cuda_whisper_guide_2026.mp4 复制整段打开即可',
-  },
-  {
-    title: 'PDF 转 Word 文档',
-    subtitle: '自动识别格式并派发转换',
-    text: '帮我把这个 PDF 转成 Word 格式',
-    attachment: {
-      id: 'sample-pdf',
-      name: '2026年度技术架构方案.pdf',
-      size: 3.8 * 1024 * 1024,
-      category: 'document',
-      extension: 'pdf',
-    },
-  },
-  {
-    title: '视频自动抽音轨转录',
-    subtitle: 'Kaggle T4 · 精准版 faster-whisper',
-    text: '用 Kaggle T4 精准版帮我转录这个视频里的语音',
-    attachment: {
-      id: 'sample-mp4',
-      name: '产品复盘会议录屏.mp4',
-      size: 162 * 1024 * 1024,
-      category: 'video',
-      extension: 'mp4',
-    },
-  },
-];
-
 export function AgentView({
+  lang,
   messages,
   onSendMessage,
   onUpdateAction,
@@ -88,6 +55,7 @@ export function AgentView({
   onNavigateView,
   onCopyText,
 }: AgentViewProps) {
+  const t = TRANSLATIONS[lang];
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState<AttachedFileItem[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -164,10 +132,8 @@ export function AgentView({
       {isDragging && (
         <div className="pointer-events-none absolute inset-4 z-30 flex items-center justify-center rounded-panel border-2 border-dashed border-[#2563EB] bg-white/92">
           <div className="text-center">
-            <p className="text-[15px] font-semibold text-[#0F172A]">松开文件，交给 AI 自动识别</p>
-            <p className="mt-1 text-[13px] text-[#64748B]">
-              支持音视频转录（视频自动提取音轨）及 PDF / Word 文档转换
-            </p>
+            <p className="text-[15px] font-semibold text-[#0F172A]">{t.agent.dropTitle}</p>
+            <p className="mt-1 text-[13px] text-[#64748B]">{t.agent.dropSubtitle}</p>
           </div>
         </div>
       )}
@@ -175,35 +141,14 @@ export function AgentView({
       {/* Main Scrollable Stream */}
       <div className="flex-1 overflow-y-auto px-5 py-8 sm:px-8">
         {isEmpty ? (
-          <div className="mx-auto flex h-full max-w-[760px] flex-col justify-center pb-8">
-            <div className="mb-8">
-              <h1 className="text-[28px] font-semibold tracking-tight text-[#0F172A] [text-wrap:balance]">
-                丢入链接、文件，直接说你想做什么
-              </h1>
-              <p className="mt-2 text-[14px] text-[#64748B]">
-                AI 助手会自动清洗链接、识别音视频或文档并调用工具；也可在左侧直达手动工作台。
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {QUICK_PROMPTS.map((item) => (
-                <button
-                  key={item.title}
-                  type="button"
-                  onClick={() =>
-                    onSendMessage(item.text, item.attachment ? [item.attachment] : [])
-                  }
-                  className="group flex flex-col items-start rounded-panel border border-[#E5E7EB] bg-white p-4 text-left transition-colors duration-150 hover:border-[#CBD5E1] hover:bg-[#FCFDFE]"
-                >
-                  <span className="text-[14px] font-semibold text-[#0F172A] group-hover:text-[#2563EB] transition-colors">
-                    {item.title}
-                  </span>
-                  <span className="mt-1.5 text-[12px] leading-relaxed text-[#64748B]">
-                    {item.subtitle}
-                  </span>
-                </button>
-              ))}
-            </div>
+          <div className="mx-auto flex h-full max-w-[680px] flex-col items-start justify-center pb-8">
+            <BrandLogo size={46} className="mb-5 shadow-[0_6px_18px_rgba(10,10,14,0.22)] rounded-[12px]" />
+            <h1 className="text-[28px] font-semibold tracking-tight text-[#0F172A] [text-wrap:balance]">
+              {t.agent.welcomeTitle}
+            </h1>
+            <p className="mt-2.5 max-w-[580px] text-[14px] leading-relaxed text-[#64748B]">
+              {t.agent.welcomeSubtitle}
+            </p>
           </div>
         ) : (
           <div className="mx-auto max-w-[780px] space-y-6 pb-4">
@@ -252,6 +197,7 @@ export function AgentView({
                     {msg.action && (
                       <div className="mt-3">
                         <AgentActionCard
+                          lang={lang}
                           messageId={msg.id}
                           action={msg.action}
                           onUpdateAction={onUpdateAction}
@@ -279,16 +225,16 @@ export function AgentView({
               <div className="flex min-w-0 items-center gap-2">
                 <Link2 className="h-3.5 w-3.5 shrink-0 text-[#2563EB]" />
                 <span className="shrink-0 font-medium text-[#0F172A]">
-                  {draftUrlPreview.hadNoise ? '已精准提取链接' : '已识别链接'}
+                  {draftUrlPreview.hadNoise ? t.agent.extractedLink : t.agent.detectedLink}
                 </span>
                 <span className="truncate font-mono text-[#475569]">{draftUrlPreview.cleanUrl}</span>
               </div>
               <button
                 type="button"
-                onClick={() => onCopyText(draftUrlPreview.cleanUrl!, '纯链接')}
+                onClick={() => onCopyText(draftUrlPreview.cleanUrl!, t.toasts.cleanUrlLabel)}
                 className="shrink-0 text-[#2563EB] hover:text-[#1D4ED8] whitespace-nowrap"
               >
-                复制纯链
+                {t.agent.copyUrl}
               </button>
             </div>
           )}
@@ -311,15 +257,15 @@ export function AgentView({
                   <span className="max-w-[180px] truncate font-medium">{file.name}</span>
                   <span className="text-[#64748B]">
                     {file.category === 'video'
-                      ? '视频·自动抽音轨'
+                      ? t.agent.videoAutoExtract
                       : file.category === 'audio'
-                        ? '音频'
-                        : '文档'}
+                        ? t.agent.audioTag
+                        : t.agent.docTag}
                   </span>
                   <button
                     type="button"
                     onClick={() => setAttachments((prev) => prev.filter((item) => item.id !== file.id))}
-                    aria-label={`移除 ${file.name}`}
+                    aria-label={t.agent.removeFile(file.name)}
                     className="text-[#94A3B8] hover:text-[#0F172A]"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -346,8 +292,8 @@ export function AgentView({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              aria-label="添加文件"
-              title="添加音视频或文档"
+              aria-label={t.agent.addFiles}
+              title={t.agent.addFilesTitle}
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-[#64748B] hover:bg-[#E5E7EB]/60 hover:text-[#0F172A] transition-colors"
             >
               <Paperclip className="h-4 w-4" />
@@ -363,14 +309,14 @@ export function AgentView({
                 e.target.style.height = `${Math.min(e.target.scrollHeight, 128)}px`;
               }}
               onKeyDown={handleKeyDown}
-              placeholder="粘贴带杂字的链接、拖入 PDF/音视频，或直接输入指令…"
+              placeholder={t.agent.placeholder}
               className="max-h-32 flex-1 resize-none bg-transparent py-2 text-[14px] text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none"
             />
 
             <button
               type="submit"
               disabled={!draft.trim() && attachments.length === 0}
-              aria-label="发送指令"
+              aria-label={t.agent.sendCommand}
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-[#2563EB] text-white transition-colors duration-150 hover:bg-[#1D4ED8] disabled:bg-[#CBD5E1] disabled:cursor-not-allowed"
             >
               <ArrowUp className="h-4 w-4" strokeWidth={2.2} />
@@ -383,6 +329,7 @@ export function AgentView({
 }
 
 interface AgentActionCardProps {
+  lang: AppLanguage;
   messageId: string;
   action: AgentActionPayload;
   onUpdateAction: (messageId: string, updater: (action: AgentActionPayload) => AgentActionPayload) => void;
@@ -392,6 +339,7 @@ interface AgentActionCardProps {
 }
 
 function AgentActionCard({
+  lang,
   messageId,
   action,
   onUpdateAction,
@@ -399,6 +347,10 @@ function AgentActionCard({
   onNavigateView,
   onCopyText,
 }: AgentActionCardProps) {
+  const t = TRANSLATIONS[lang];
+  const providersMeta = getComputeProviders(lang);
+  const presetsMeta = getWhisperPresets(lang);
+
   if (action.type === 'download') {
     const threadOptions: ThreadCount[] = [8, 16, 32, 64];
 
@@ -407,7 +359,7 @@ function AgentActionCard({
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-[13px] font-semibold text-[#0F172A]">
             <Download className="h-4 w-4 text-[#2563EB]" />
-            <span>高速下载调度</span>
+            <span>{t.agent.downloadDispatch}</span>
           </div>
           <span className="font-mono text-[12px] text-[#64748B] truncate max-w-[260px]">
             {action.fileName}
@@ -436,7 +388,7 @@ function AgentActionCard({
                     : 'text-[#64748B] hover:text-[#0F172A]'
                 }`}
               >
-                {count} 线程
+                {t.agent.threadsUnit(count)}
               </button>
             ))}
           </div>
@@ -444,11 +396,11 @@ function AgentActionCard({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => onCopyText(action.cleanUrl, '纯链接')}
+              onClick={() => onCopyText(action.cleanUrl, t.toasts.cleanUrlLabel)}
               className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:bg-[#F8F9FA] hover:text-[#0F172A] whitespace-nowrap"
             >
               <Copy className="h-3.5 w-3.5" />
-              复制纯链
+              {t.agent.copyUrl}
             </button>
 
             {action.dispatchedTaskId ? (
@@ -458,7 +410,7 @@ function AgentActionCard({
                 className="inline-flex items-center gap-1.5 rounded-control bg-[#16A34A] px-3.5 py-1.5 text-[12px] font-medium text-white hover:bg-[#15803D] whitespace-nowrap"
               >
                 <Check className="h-3.5 w-3.5" />
-                已加入下载 · 查看
+                {t.agent.addedToDownload}
               </button>
             ) : (
               <button
@@ -466,7 +418,7 @@ function AgentActionCard({
                 onClick={() => onDispatchAction(messageId, action)}
                 className="inline-flex items-center gap-1.5 rounded-control bg-[#2563EB] px-3.5 py-1.5 text-[12px] font-medium text-white hover:bg-[#1D4ED8] whitespace-nowrap"
               >
-                发送到高速下载
+                {t.agent.sendToDownload}
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
             )}
@@ -484,12 +436,14 @@ function AgentActionCard({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-[13px] font-semibold text-[#0F172A]">
             <AudioWaveform className="h-4 w-4 text-[#2563EB]" />
-            <span>云端语音转录</span>
+            <span>{t.agent.cloudTranscribe}</span>
           </div>
           <div className="flex items-center gap-1.5 text-[12px] text-[#64748B]">
             <span className="font-medium text-[#0F172A]">{action.fileName}</span>
             <span aria-hidden="true">·</span>
-            <span>{action.needsAudioExtract ? '视频源 · 将自动提取音轨' : '音频源'}</span>
+            <span>
+              {action.needsAudioExtract ? t.agent.videoSourceHint : t.agent.audioSourceHint}
+            </span>
           </div>
         </div>
 
@@ -511,7 +465,7 @@ function AgentActionCard({
                     : 'text-[#64748B] hover:text-[#0F172A]'
                 }`}
               >
-                {COMPUTE_PROVIDERS[provider].name} T4
+                {providersMeta[provider].name} T4
               </button>
             ))}
           </div>
@@ -533,7 +487,7 @@ function AgentActionCard({
                     : 'text-[#64748B] hover:text-[#0F172A]'
                 }`}
               >
-                {WHISPER_PRESETS[preset].label}
+                {presetsMeta[preset].label}
               </button>
             ))}
           </div>
@@ -542,7 +496,7 @@ function AgentActionCard({
             {(
               [
                 { id: 'srt', label: 'SRT' },
-                { id: 'md_plain', label: 'MD 无时间轴' },
+                { id: 'md_plain', label: t.agent.mdPlainLabel },
               ] as const
             ).map((fmt) => (
               <button
@@ -568,7 +522,7 @@ function AgentActionCard({
 
         <div className="mt-3 flex items-center justify-between gap-3">
           <span className="font-mono text-[12px] text-[#64748B]">
-            {WHISPER_PRESETS[action.preset].modelName} · {WHISPER_PRESETS[action.preset].sizeLabel}
+            {presetsMeta[action.preset].modelName} · {presetsMeta[action.preset].sizeLabel}
           </span>
 
           {action.dispatchedTaskId ? (
@@ -578,7 +532,7 @@ function AgentActionCard({
               className="inline-flex items-center gap-1.5 rounded-control bg-[#16A34A] px-3.5 py-1.5 text-[12px] font-medium text-white hover:bg-[#15803D] whitespace-nowrap"
             >
               <Check className="h-3.5 w-3.5" />
-              已启动转录 · 查看进度
+              {t.agent.transcribeStarted}
             </button>
           ) : (
             <button
@@ -586,7 +540,7 @@ function AgentActionCard({
               onClick={() => onDispatchAction(messageId, action)}
               className="inline-flex items-center gap-1.5 rounded-control bg-[#2563EB] px-3.5 py-1.5 text-[12px] font-medium text-white hover:bg-[#1D4ED8] whitespace-nowrap"
             >
-              启动云端转录
+              {t.agent.startCloudTranscribe}
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
           )}
@@ -601,7 +555,7 @@ function AgentActionCard({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-[13px] font-semibold text-[#0F172A]">
           <FileOutput className="h-4 w-4 text-[#2563EB]" />
-          <span>文档格式转换</span>
+          <span>{t.agent.docConvert}</span>
         </div>
         <span className="text-[12px] text-[#64748B]">
           {action.fileName} · {formatBytes(action.fileSizeBytes)}
@@ -610,7 +564,9 @@ function AgentActionCard({
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-[12px]">
-          <span className="font-medium text-[#0F172A]">{formatLabel(action.sourceFormat)}</span>
+          <span className="font-medium text-[#0F172A]">
+            {formatLabel(action.sourceFormat, lang)}
+          </span>
           <ArrowRight className="h-3.5 w-3.5 text-[#94A3B8]" />
           <div className="flex items-center gap-1 rounded-control bg-[#F3F4F6] p-1">
             {targets.slice(0, 3).map((fmt: DocumentFormat) => (
@@ -629,7 +585,7 @@ function AgentActionCard({
                     : 'text-[#64748B] hover:text-[#0F172A]'
                 }`}
               >
-                {formatLabel(fmt)}
+                {formatLabel(fmt, lang)}
               </button>
             ))}
           </div>
@@ -642,7 +598,7 @@ function AgentActionCard({
             className="inline-flex items-center gap-1.5 rounded-control bg-[#16A34A] px-3.5 py-1.5 text-[12px] font-medium text-white hover:bg-[#15803D] whitespace-nowrap"
           >
             <Check className="h-3.5 w-3.5" />
-            已开始转换 · 查看
+            {t.agent.convertStarted}
           </button>
         ) : (
           <button
@@ -650,7 +606,7 @@ function AgentActionCard({
             onClick={() => onDispatchAction(messageId, action)}
             className="inline-flex items-center gap-1.5 rounded-control bg-[#2563EB] px-3.5 py-1.5 text-[12px] font-medium text-white hover:bg-[#1D4ED8] whitespace-nowrap"
           >
-            开始转换
+            {t.agent.startConvert}
             <ArrowRight className="h-3.5 w-3.5" />
           </button>
         )}

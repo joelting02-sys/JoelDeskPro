@@ -13,66 +13,127 @@ import {
   TranscriptSegment,
   WhisperPresetId,
 } from '../types/toolkit';
+import { AppLanguage } from '../i18n';
 
-export const WHISPER_PRESETS: Record<
-  WhisperPresetId,
-  {
-    id: WhisperPresetId;
-    label: string;
-    modelName: string;
-    summary: string;
-    sizeLabel: string;
-    speedTag: string;
-  }
+export interface WhisperPresetMeta {
+  id: WhisperPresetId;
+  label: string;
+  modelName: string;
+  summary: string;
+  sizeLabel: string;
+  speedTag: string;
+}
+
+export const WHISPER_PRESETS_BY_LANG: Record<
+  AppLanguage,
+  Record<WhisperPresetId, WhisperPresetMeta>
 > = {
-  fast: {
-    id: 'fast',
-    label: '快速版',
-    modelName: 'faster-whisper-small',
-    summary: '极速出稿，适合日常会议与短音频',
-    sizeLabel: '484 MB',
-    speedTag: '约 12x 实时',
+  en: {
+    fast: {
+      id: 'fast',
+      label: 'Fast',
+      modelName: 'faster-whisper-small',
+      summary: 'Rapid turnaround for meetings and short clips',
+      sizeLabel: '484 MB',
+      speedTag: '~12x realtime',
+    },
+    balanced: {
+      id: 'balanced',
+      label: 'Balanced',
+      modelName: 'faster-whisper-medium',
+      summary: 'Best balance of speed and accuracy for daily use',
+      sizeLabel: '1.53 GB',
+      speedTag: '~6x realtime',
+    },
+    accurate: {
+      id: 'accurate',
+      label: 'Accurate',
+      modelName: 'faster-whisper-large-v3',
+      summary: 'Highest precision for multilingual & technical speech',
+      sizeLabel: '3.09 GB',
+      speedTag: '~3x realtime',
+    },
   },
-  balanced: {
-    id: 'balanced',
-    label: '均衡版',
-    modelName: 'faster-whisper-medium',
-    summary: '速度与识别准确度兼顾，通用首选',
-    sizeLabel: '1.53 GB',
-    speedTag: '约 6x 实时',
-  },
-  accurate: {
-    id: 'accurate',
-    label: '精准版',
-    modelName: 'faster-whisper-large-v3',
-    summary: '最高精度，适合多语种与专业术语',
-    sizeLabel: '3.09 GB',
-    speedTag: '约 3x 实时',
+  zh: {
+    fast: {
+      id: 'fast',
+      label: '快速版',
+      modelName: 'faster-whisper-small',
+      summary: '极速出稿，适合日常会议与短音频',
+      sizeLabel: '484 MB',
+      speedTag: '约 12x 实时',
+    },
+    balanced: {
+      id: 'balanced',
+      label: '均衡版',
+      modelName: 'faster-whisper-medium',
+      summary: '速度与识别准确度兼顾，通用首选',
+      sizeLabel: '1.53 GB',
+      speedTag: '约 6x 实时',
+    },
+    accurate: {
+      id: 'accurate',
+      label: '精准版',
+      modelName: 'faster-whisper-large-v3',
+      summary: '最高精度，适合多语种与专业术语',
+      sizeLabel: '3.09 GB',
+      speedTag: '约 3x 实时',
+    },
   },
 };
 
-export const COMPUTE_PROVIDERS: Record<
-  ComputeProvider,
-  {
-    id: ComputeProvider;
-    name: string;
-    gpuSpec: string;
-    note: string;
-  }
+export const WHISPER_PRESETS = WHISPER_PRESETS_BY_LANG.en;
+
+export function getWhisperPresets(lang: AppLanguage) {
+  return WHISPER_PRESETS_BY_LANG[lang];
+}
+
+export interface ComputeProviderMeta {
+  id: ComputeProvider;
+  name: string;
+  gpuSpec: string;
+  note: string;
+}
+
+export const COMPUTE_PROVIDERS_BY_LANG: Record<
+  AppLanguage,
+  Record<ComputeProvider, ComputeProviderMeta>
 > = {
-  'colab-t4': {
-    id: 'colab-t4',
-    name: 'Google Colab',
-    gpuSpec: 'NVIDIA T4 · 16 GB',
-    note: '首次切换模型将在云端实例自动拉取权重',
+  en: {
+    'colab-t4': {
+      id: 'colab-t4',
+      name: 'Google Colab',
+      gpuSpec: 'NVIDIA T4 · 16 GB',
+      note: 'Model weights download automatically on first switch',
+    },
+    'kaggle-t4': {
+      id: 'kaggle-t4',
+      name: 'Kaggle Kernel',
+      gpuSpec: 'NVIDIA T4 x2 · 30 GB',
+      note: 'Ideal for long media & large-v3 batch inference',
+    },
   },
-  'kaggle-t4': {
-    id: 'kaggle-t4',
-    name: 'Kaggle Kernel',
-    gpuSpec: 'NVIDIA T4 x2 · 30 GB',
-    note: '适合长音视频与 large-v3 批量推理',
+  zh: {
+    'colab-t4': {
+      id: 'colab-t4',
+      name: 'Google Colab',
+      gpuSpec: 'NVIDIA T4 · 16 GB',
+      note: '首次切换模型将在云端实例自动拉取权重',
+    },
+    'kaggle-t4': {
+      id: 'kaggle-t4',
+      name: 'Kaggle Kernel',
+      gpuSpec: 'NVIDIA T4 x2 · 30 GB',
+      note: '适合长音视频与 large-v3 批量推理',
+    },
   },
 };
+
+export const COMPUTE_PROVIDERS = COMPUTE_PROVIDERS_BY_LANG.en;
+
+export function getComputeProviders(lang: AppLanguage) {
+  return COMPUTE_PROVIDERS_BY_LANG[lang];
+}
 
 export const DEFAULT_ENDPOINT_CONFIG: EndpointConfig = {
   llmBaseUrl: 'http://127.0.0.1:11434/v1',
@@ -81,6 +142,9 @@ export const DEFAULT_ENDPOINT_CONFIG: EndpointConfig = {
   runtimeMode: 'mock',
   colabBridgeUrl: 'https://your-colab-tunnel.trycloudflare.com/api/transcribe',
   kaggleBridgeUrl: 'https://your-kaggle-worker.trycloudflare.com/api/transcribe',
+  colabGpuSpec: 'T4',
+  autoShutdownEnabled: false,
+  autoShutdownMinutes: 15,
   ffmpegAutoExtract: true,
   downloaderRpcUrl: 'http://127.0.0.1:17890/api/download',
   ytdlpPath: 'yt-dlp',
@@ -92,6 +156,9 @@ export const DEFAULT_ENDPOINT_CONFIG: EndpointConfig = {
   chromeBridgeAutoStart: true,
   clipboardSniffEnabled: true,
   converterApiUrl: 'http://127.0.0.1:8765/api/convert',
+  githubRepo: 'joelting02-sys/JoelDeskPro',
+  githubBranch: 'main',
+  autoCheckUpdate: false,
 };
 
 const STREAM_MEDIA_HOSTS = [
@@ -126,14 +193,14 @@ export function detectDownloadEngine(url: string): DownloadEngine {
   return 'http_range';
 }
 
-export function mediaQualityLabel(quality: MediaQuality): string {
+export function mediaQualityLabel(quality: MediaQuality, lang: AppLanguage = 'en'): string {
   switch (quality) {
     case 'best':
-      return '最高画质';
+      return lang === 'zh' ? '最高画质' : 'Best Quality';
     case '1080p':
       return '1080P';
     case 'audio_only':
-      return '仅音轨';
+      return lang === 'zh' ? '仅音轨' : 'Audio Only';
   }
 }
 
@@ -211,32 +278,34 @@ export function getAvailableTargetFormats(source: DocumentFormat): DocumentForma
 }
 
 export function getFormatMenuGroups(
-  fileName: string
+  fileName: string,
+  lang: AppLanguage = 'en'
 ): Array<{ groupLabel: string; options: Array<{ format: DocumentFormat; label: string; hint: string }> }> {
   const source = detectDocumentFormat(fileName);
   const category = detectFileCategory(fileName);
+  const isZh = lang === 'zh';
 
   if (category === 'video' || isVideoFormat(source)) {
     return [
       {
-        groupLabel: '视频 / 动图格式',
+        groupLabel: isZh ? '视频 / 动图格式' : 'Video & Animation',
         options: (
           [
-            { format: 'mp4', label: 'MP4', hint: '通用兼容 H.264' },
-            { format: 'mkv', label: 'MKV', hint: '无损封装' },
-            { format: 'mov', label: 'MOV', hint: '适合剪辑' },
-            { format: 'webm', label: 'WEBM', hint: '网页轻量化' },
-            { format: 'gif', label: 'GIF', hint: '动图导出' },
+            { format: 'mp4', label: 'MP4', hint: isZh ? '通用兼容 H.264' : 'Universal H.264' },
+            { format: 'mkv', label: 'MKV', hint: isZh ? '无损封装' : 'Lossless container' },
+            { format: 'mov', label: 'MOV', hint: isZh ? '适合剪辑' : 'Editing ready' },
+            { format: 'webm', label: 'WEBM', hint: isZh ? '网页轻量化' : 'Lightweight web' },
+            { format: 'gif', label: 'GIF', hint: isZh ? '动图导出' : 'Animated loop' },
           ] as const
         ).filter((item) => item.format !== source),
       },
       {
-        groupLabel: '提取为纯音频',
+        groupLabel: isZh ? '提取为纯音频' : 'Extract Audio',
         options: [
-          { format: 'mp3', label: 'MP3', hint: '320kbps 通用' },
-          { format: 'wav', label: 'WAV', hint: '无损音轨' },
-          { format: 'm4a', label: 'M4A', hint: 'AAC 轻量' },
-          { format: 'flac', label: 'FLAC', hint: '无损压缩' },
+          { format: 'mp3', label: 'MP3', hint: isZh ? '320kbps 通用' : '320kbps standard' },
+          { format: 'wav', label: 'WAV', hint: isZh ? '无损音轨' : 'Uncompressed PCM' },
+          { format: 'm4a', label: 'M4A', hint: isZh ? 'AAC 轻量' : 'AAC compact' },
+          { format: 'flac', label: 'FLAC', hint: isZh ? '无损压缩' : 'Lossless audio' },
         ],
       },
     ];
@@ -245,14 +314,14 @@ export function getFormatMenuGroups(
   if (category === 'audio' || isAudioFormat(source)) {
     return [
       {
-        groupLabel: '音频格式转换',
+        groupLabel: isZh ? '音频格式转换' : 'Audio Formats',
         options: (
           [
-            { format: 'mp3', label: 'MP3', hint: '高兼容' },
-            { format: 'wav', label: 'WAV', hint: '无损 PCM' },
-            { format: 'flac', label: 'FLAC', hint: '无损压缩' },
+            { format: 'mp3', label: 'MP3', hint: isZh ? '高兼容' : 'High compatibility' },
+            { format: 'wav', label: 'WAV', hint: isZh ? '无损 PCM' : 'Lossless PCM' },
+            { format: 'flac', label: 'FLAC', hint: isZh ? '无损压缩' : 'Lossless compressed' },
             { format: 'm4a', label: 'M4A', hint: 'Apple / AAC' },
-            { format: 'ogg', label: 'OGG', hint: '小体积' },
+            { format: 'ogg', label: 'OGG', hint: isZh ? '小体积' : 'Compact stream' },
           ] as const
         ).filter((item) => item.format !== source),
       },
@@ -261,21 +330,22 @@ export function getFormatMenuGroups(
 
   return [
     {
-      groupLabel: '文档格式转换',
+      groupLabel: isZh ? '文档格式转换' : 'Document Formats',
       options: (
         [
-          { format: 'pdf', label: 'PDF', hint: '固定排版' },
-          { format: 'docx', label: 'Word', hint: '.docx 可编辑' },
-          { format: 'md', label: 'Markdown', hint: '纯文本笔记' },
-          { format: 'png', label: 'PNG', hint: '高清图片' },
-          { format: 'txt', label: 'TXT', hint: '纯文本' },
+          { format: 'pdf', label: 'PDF', hint: isZh ? '固定排版' : 'Fixed layout' },
+          { format: 'docx', label: 'Word', hint: isZh ? '.docx 可编辑' : 'Editable .docx' },
+          { format: 'md', label: 'Markdown', hint: isZh ? '纯文本笔记' : 'Plain notes' },
+          { format: 'png', label: 'PNG', hint: isZh ? '高清图片' : 'Lossless image' },
+          { format: 'txt', label: 'TXT', hint: isZh ? '纯文本' : 'Plain text' },
         ] as const
       ).filter((item) => item.format !== source),
     },
   ];
 }
 
-export function formatLabel(fmt: DocumentFormat): string {
+export function formatLabel(fmt: DocumentFormat, lang: AppLanguage = 'en'): string {
+  const isZh = lang === 'zh';
   switch (fmt) {
     case 'pdf':
       return 'PDF';
@@ -284,29 +354,29 @@ export function formatLabel(fmt: DocumentFormat): string {
     case 'md':
       return 'Markdown';
     case 'png':
-      return 'PNG 图片';
+      return isZh ? 'PNG 图片' : 'PNG Image';
     case 'txt':
-      return 'TXT 纯文本';
+      return isZh ? 'TXT 纯文本' : 'TXT Plain';
     case 'mp4':
-      return 'MP4 视频';
+      return isZh ? 'MP4 视频' : 'MP4 Video';
     case 'mkv':
-      return 'MKV 视频';
+      return isZh ? 'MKV 视频' : 'MKV Video';
     case 'mov':
-      return 'MOV 视频';
+      return isZh ? 'MOV 视频' : 'MOV Video';
     case 'webm':
-      return 'WEBM 视频';
+      return isZh ? 'WEBM 视频' : 'WEBM Video';
     case 'gif':
-      return 'GIF 动图';
+      return isZh ? 'GIF 动图' : 'GIF Animation';
     case 'mp3':
-      return 'MP3 音频';
+      return isZh ? 'MP3 音频' : 'MP3 Audio';
     case 'wav':
-      return 'WAV 无损';
+      return isZh ? 'WAV 无损' : 'WAV Lossless';
     case 'm4a':
-      return 'M4A 音频';
+      return isZh ? 'M4A 音频' : 'M4A Audio';
     case 'flac':
-      return 'FLAC 无损';
+      return isZh ? 'FLAC 无损' : 'FLAC Lossless';
     case 'ogg':
-      return 'OGG 音频';
+      return isZh ? 'OGG 音频' : 'OGG Audio';
   }
 }
 
@@ -398,34 +468,38 @@ function inferThreads(text: string, defaultThreads: ThreadCount): ThreadCount {
   return defaultThreads;
 }
 
-/**
- * Agent 意图路由适配器（前端原型实现）
- * 后续接入本地大模型（Ollama / LM Studio / OpenAI-compatible Function Calling）时，
- * 直接在此函数内调用 `config.llmBaseUrl + '/chat/completions'` 即可无缝替换。
- */
 export function parseAgentIntent(
   text: string,
   attachments: AttachedFileItem[],
-  config: EndpointConfig
+  config: EndpointConfig,
+  lang: AppLanguage = 'en'
 ): { reply: string; action?: AgentActionPayload } {
+  const isZh = lang === 'zh';
   const trimmed = text.trim();
   const urlInfo = extractCleanUrl(trimmed);
 
-  // 1. 优先识别杂乱文本或链接 -> 高速下载调度（自动 Range 分片优先，视频页自动切换解析）
+  // 1. Extract URL from clean or noisy text -> High-Speed Download dispatch
   if (urlInfo.cleanUrl) {
     const threads = inferThreads(trimmed, config.defaultThreads);
     const engine = detectDownloadEngine(urlInfo.cleanUrl);
     const lowerText = trimmed.toLowerCase();
     const mediaQuality: MediaQuality =
-      lowerText.includes('仅音频') || lowerText.includes('mp3') || lowerText.includes('音轨')
+      lowerText.includes('仅音频') ||
+      lowerText.includes('audio only') ||
+      lowerText.includes('mp3') ||
+      lowerText.includes('音轨')
         ? 'audio_only'
         : lowerText.includes('1080')
           ? '1080p'
           : 'best';
 
-    const reply = urlInfo.hadNoise
-      ? '已自动过滤前后杂字并提取纯净链接，系统将自动以最快多线程分片方案拉取（视频页自动解析）。'
-      : '已识别链接，将自动选择最快的多线程分片方案开始下载。';
+    const reply = isZh
+      ? urlInfo.hadNoise
+        ? '已自动过滤前后杂字并提取纯净链接，系统将自动以最快多线程分片方案拉取（视频页自动解析）。'
+        : '已识别链接，将自动选择最快的多线程分片方案开始下载。'
+      : urlInfo.hadNoise
+        ? 'Cleaned surrounding text and extracted the direct URL. Ready to download with automatic multi-chunk acceleration.'
+        : 'URL detected. Ready to start downloading with the fastest multi-chunk mode.';
 
     return {
       reply,
@@ -441,15 +515,19 @@ export function parseAgentIntent(
     };
   }
 
-  // 2. 识别附件中的音视频 -> 云端语音转录
+  // 2. Attached audio/video -> Cloud T4 Transcription
   const mediaAttachment = attachments.find((f) => f.category === 'video' || f.category === 'audio');
   if (mediaAttachment) {
     const isVideo = mediaAttachment.category === 'video';
     const provider = inferProvider(trimmed);
     const preset = inferWhisperPreset(trimmed);
-    const reply = isVideo
-      ? '已识别为视频文件，转录前将自动抽离 16kHz 音轨并调度云端 T4 运行 faster-whisper。可在下方确认模型与算力节点。'
-      : '已识别为音频文件，可直接发送至云端 T4 运行 faster-whisper 转录。';
+    const reply = isZh
+      ? isVideo
+        ? '已识别为视频文件，转录前将自动抽离 16kHz 音轨并调度云端 T4 运行 faster-whisper。可在下方确认模型与算力节点。'
+        : '已识别为音频文件，可直接发送至云端 T4 运行 faster-whisper 转录。'
+      : isVideo
+        ? 'Video file detected. A 16kHz audio track will be extracted automatically before dispatching to cloud T4 faster-whisper.'
+        : 'Audio file detected. Ready to dispatch directly to cloud T4 faster-whisper.';
 
     const wantsMdPlain =
       trimmed.toLowerCase().includes('md') ||
@@ -471,13 +549,15 @@ export function parseAgentIntent(
     };
   }
 
-  // 3. 识别附件中的文档 -> 格式转换
+  // 3. Attached document -> Format Conversion
   const docAttachment = attachments.find((f) => f.category === 'document');
   if (docAttachment) {
     const sourceFormat = detectDocumentFormat(docAttachment.name);
     const targetFormat = inferRequestedTargetFormat(trimmed, sourceFormat);
     return {
-      reply: `已识别源文件格式为 ${formatLabel(sourceFormat)}，并为你匹配目标格式 ${formatLabel(targetFormat)}。确认后即可开始转换。`,
+      reply: isZh
+        ? `已识别源文件格式为 ${formatLabel(sourceFormat, lang)}，并为你匹配目标格式 ${formatLabel(targetFormat, lang)}。确认后即可开始转换。`
+        : `Detected ${formatLabel(sourceFormat, lang)} input and matched target format ${formatLabel(targetFormat, lang)}. Confirm below to start converting.`,
       action: {
         type: 'convert',
         fileName: docAttachment.name,
@@ -488,36 +568,20 @@ export function parseAgentIntent(
     };
   }
 
-  // 4. 无附件但文本明确提及转录 / 转换意图
+  // 4. Text mentions transcription or conversion without a real file attached (no fake sample files!)
   const lower = trimmed.toLowerCase();
   if (
     lower.includes('转录') ||
     lower.includes('字幕') ||
+    lower.includes('transcribe') ||
+    lower.includes('subtitle') ||
     lower.includes('whisper') ||
-    lower.includes('录音') ||
-    lower.includes('colab') ||
-    lower.includes('kaggle')
+    lower.includes('录音')
   ) {
-    const provider = inferProvider(trimmed);
-    const preset = inferWhisperPreset(trimmed);
-    const isVideoMention = lower.includes('视频') || lower.includes('mp4') || lower.includes('录屏');
-    const wantsMdPlain =
-      lower.includes('md') || lower.includes('markdown') || trimmed.includes('无时间轴');
     return {
-      reply: isVideoMention
-        ? '已按你的指令准备好视频转录配置（将自动先提取音轨），当前以示例视频预填；你也可以直接拖入本地视频或切到左侧「语音转录」手动操作。'
-        : '已为你预设云端 T4 语音转录方案，可直接启动演示，或拖入你的音频/视频文件。',
-      action: {
-        type: 'transcribe',
-        fileName: isVideoMention ? '产品评审录屏_2026.mp4' : '周会纪要录音.m4a',
-        fileSizeBytes: isVideoMention ? 148 * 1024 * 1024 : 26 * 1024 * 1024,
-        mediaKind: isVideoMention ? 'video' : 'audio',
-        needsAudioExtract: isVideoMention,
-        provider,
-        preset,
-        outputFormat: wantsMdPlain ? 'md_plain' : 'srt',
-        language: 'auto',
-      },
+      reply: isZh
+        ? '请直接拖入或点击左下角回形针附上你的音频 / 视频文件，我会立即为你配置云端 T4 转录参数。'
+        : 'Please drop or attach an audio or video file using the paperclip button below, and I will prepare cloud T4 transcription immediately.',
     };
   }
 
@@ -525,42 +589,37 @@ export function parseAgentIntent(
     lower.includes('pdf') ||
     lower.includes('word') ||
     lower.includes('docx') ||
+    lower.includes('convert') ||
     lower.includes('转换') ||
     lower.includes('转成')
   ) {
-    const wantsPdfToWord = lower.includes('pdf') && (lower.includes('word') || lower.includes('docx') || !lower.includes('转pdf'));
-    const sourceFormat: DocumentFormat = wantsPdfToWord ? 'pdf' : 'docx';
-    const targetFormat: DocumentFormat = wantsPdfToWord ? 'docx' : 'pdf';
     return {
-      reply: `已理解你的格式转换需求（${formatLabel(sourceFormat)} → ${formatLabel(targetFormat)}）。可直接拖入文档，或点击下方卡片用示例文件体验流程。`,
-      action: {
-        type: 'convert',
-        fileName: sourceFormat === 'pdf' ? '季度复盘报告_2026.pdf' : '项目方案草案.docx',
-        fileSizeBytes: 4.2 * 1024 * 1024,
-        sourceFormat,
-        targetFormat,
-      },
+      reply: isZh
+        ? '请直接拖入或附上需要转换的文档或音视频文件，我会为你匹配目标格式并启动转换。'
+        : 'Please drop or attach the document or media file you want to convert, and I will match the target format for you.',
     };
   }
 
   return {
-    reply:
-      '你可以直接把带杂字的分享链接粘贴给我提取下载、拖入 PDF/Word 指定转换格式，或丢入音频/视频让我调用 Colab / Kaggle T4 转录；也可以随时从左侧切换到「手动工作台」直接操作。',
+    reply: isZh
+      ? '你可以直接粘贴链接让我提取并高速下载，拖入文档指定转换格式，或附上音视频让我调用云端 T4 转录；也可以随时从左侧切换到对应工作台。'
+      : 'Paste any URL to extract and download at high speed, drop documents to convert formats, or attach audio/video for cloud T4 transcription — or jump directly to any workbench on the left.',
   };
 }
 
 export function generateSimulatedTranscript(
   fileName: string,
   preset: WhisperPresetId,
-  language: TranscriptLanguage
+  language: TranscriptLanguage,
+  appLang: AppLanguage = 'en'
 ): TranscriptSegment[] {
-  const isEnglish = language === 'en';
-  if (isEnglish) {
+  const isChinese = language === 'zh' || (language === 'auto' && appLang === 'zh');
+  if (!isChinese) {
     return [
       {
         start: '00:00:00,400',
         end: '00:00:04,850',
-        text: `Loaded ${fileName} on remote T4 GPU with ${WHISPER_PRESETS[preset].modelName}.`,
+        text: `Loaded ${fileName} on remote T4 GPU with ${WHISPER_PRESETS_BY_LANG.en[preset].modelName}.`,
       },
       {
         start: '00:00:05,120',
@@ -579,7 +638,7 @@ export function generateSimulatedTranscript(
     {
       start: '00:00:00,320',
       end: '00:00:05,180',
-      text: `已完成对「${fileName}」的云端 T4 语音识别，当前使用模型为 ${WHISPER_PRESETS[preset].modelName}。`,
+      text: `已完成对「${fileName}」的云端 T4 语音识别，当前使用模型为 ${WHISPER_PRESETS_BY_LANG.zh[preset].modelName}。`,
     },
     {
       start: '00:00:05,450',

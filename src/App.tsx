@@ -6,12 +6,15 @@ import { TranscribeView } from './components/TranscribeView';
 import { DownloadView } from './components/DownloadView';
 import { ConvertView } from './components/ConvertView';
 import { SettingsView } from './components/SettingsView';
+import { UpdateModal } from './components/UpdateModal';
 import {
   AgentActionPayload,
   AgentMessage,
   AttachedFileItem,
   ChromeExtensionPayload,
+  ColabGpuSpec,
   ComputeProvider,
+  ComputeRuntimeState,
   ConversionTask,
   DocumentFormat,
   DownloadEngine,
@@ -19,6 +22,7 @@ import {
   DownloadSource,
   DownloadTask,
   EndpointConfig,
+  IdleShutdownMinutes,
   MediaKind,
   MediaQuality,
   ThreadCount,
@@ -48,100 +52,63 @@ import {
   probeLocalEngine,
   runWebMultiChunkDownload,
 } from './services/webRangeDownloader';
-
-const INITIAL_TRANSCRIPTIONS: TranscriptionTask[] = [
-  {
-    id: 'tr-demo-1',
-    fileName: '架构同步会议_录音片段.m4a',
-    fileSizeBytes: 24.5 * 1024 * 1024,
-    mediaKind: 'audio',
-    needsAudioExtract: false,
-    provider: 'colab-t4',
-    preset: 'accurate',
-    outputFormat: 'srt',
-    language: 'zh',
-    stage: 'completed',
-    progress: 100,
-    createdAt: '09:42',
-    source: 'manual',
-    segments: generateSimulatedTranscript('架构同步会议_录音片段.m4a', 'accurate', 'zh'),
-  },
-];
-
-const INITIAL_DOWNLOADS: DownloadTask[] = [
-  {
-    id: 'dl-demo-video',
-    rawInput: 'https://www.youtube.com/watch?v=deskkit4kdemo',
-    cleanUrl: 'https://www.youtube.com/watch?v=deskkit4kdemo',
-    fileName: 'AI_桌面工具箱发布会_1080P.mp4',
-    saveDir: DEFAULT_ENDPOINT_CONFIG.defaultSaveDir,
-    engine: 'http_range',
-    threads: 32,
-    chunks: [100, 100, 100, 100, 100, 100, 100, 100],
-    totalMB: 486,
-    downloadedMB: 486,
-    speedMBps: 0,
-    status: 'completed',
-    createdAt: '09:36',
-    source: 'chrome_extension',
-    hasCookies: true,
-  },
-  {
-    id: 'dl-demo-1',
-    rawInput: 'https://cdn.example.com/models/faster-whisper-large-v3-ct2.tar.gz',
-    cleanUrl: 'https://cdn.example.com/models/faster-whisper-large-v3-ct2.tar.gz',
-    fileName: 'faster-whisper-large-v3-ct2.tar.gz',
-    saveDir: DEFAULT_ENDPOINT_CONFIG.defaultSaveDir,
-    engine: 'http_range',
-    threads: 32,
-    chunks: [100, 100, 100, 100, 100, 100, 100, 100],
-    totalMB: 1480,
-    downloadedMB: 1480,
-    speedMBps: 0,
-    status: 'completed',
-    createdAt: '09:20',
-    source: 'manual',
-  },
-];
-
-const INITIAL_CONVERSIONS: ConversionTask[] = [
-  {
-    id: 'cv-demo-1',
-    fileName: '项目接口规范_v1.pdf',
-    fileSizeBytes: 3.1 * 1024 * 1024,
-    sourceFormat: 'pdf',
-    targetFormat: 'docx',
-    progress: 100,
-    status: 'completed',
-    createdAt: '09:15',
-    source: 'manual',
-  },
-];
-
-const VIEW_TITLES: Record<WorkspaceView, string> = {
-  agent: 'AI 助手',
-  transcribe: '语音转录',
-  download: '高速下载',
-  convert: '格式转换',
-  settings: '模型与接口',
-};
+import {
+  GitHubUpdateInfo,
+  LocalUpdateResult,
+  checkGitHubUpdate,
+  setSyncedCommitSha,
+  triggerLocalClientUpdate,
+} from './services/githubUpdater';
+import {
+  INITIAL_COMPUTE_STATE,
+  fetchLocalComputeState,
+  getComputeBrowserAuthUrl,
+  openExternalTab,
+  refreshLocalCompute,
+  startLocalCompute,
+  stopLocalCompute,
+  syncLocalComputeSettings,
+} from './services/computeBridge';
+import { AppLanguage, TRANSLATIONS, getInitialLanguage, saveLanguage } from './i18n';
 
 export default function App() {
+  const [lang, setLang] = useState<AppLanguage>(() => getInitialLanguage());
   const [activeView, setActiveView] = useState<WorkspaceView>('agent');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const [config, setConfig] = useState<EndpointConfig>(DEFAULT_ENDPOINT_CONFIG);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
-  const [transcriptions, setTranscriptions] = useState<TranscriptionTask[]>(INITIAL_TRANSCRIPTIONS);
-  const [downloads, setDownloads] = useState<DownloadTask[]>(INITIAL_DOWNLOADS);
-  const [conversions, setConversions] = useState<ConversionTask[]>(INITIAL_CONVERSIONS);
+  const [transcriptions, setTranscriptions] = useState<TranscriptionTask[]>([]);
+  const [downloads, setDownloads] = useState<DownloadTask[]>([]);
+  const [conversions, setConversions] = useState<ConversionTask[]>([]);
   const [chromeConnected, setChromeConnected] = useState(false);
   const [localEngineOnline, setLocalEngineOnline] = useState(false);
   const [hasRealDirHandle, setHasRealDirHandle] = useState(false);
+  const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<GitHubUpdateInfo | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [updatingLocal, setUpdatingLocal] = useState(false);
+  const [localUpdateResult, setLocalUpdateResult] = useState<LocalUpdateResult | null>(null);
+  const [computeState, setComputeState] = useState<ComputeRuntimeState>(INITIAL_COMPUTE_STATE);
   const [toast, setToast] = useState<ToastNotice | null>(null);
 
   const localDirHandleRef = useRef<DirectoryHandleLike | null>(null);
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const langRef = useRef<AppLanguage>(lang);
+  langRef.current = lang;
+
+  const t = TRANSLATIONS[lang];
+
+  const handleChangeLanguage = useCallback((nextLang: AppLanguage) => {
+    setLang(nextLang);
+    saveLanguage(nextLang);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+    document.title = TRANSLATIONS[lang].documentTitle;
+  }, [lang]);
 
   const showToast = useCallback((message: string, tone: ToastNotice['tone'] = 'neutral') => {
     const id = `${Date.now()}`;
@@ -156,17 +123,17 @@ export default function App() {
       if (navigator.clipboard?.writeText) {
         navigator.clipboard.writeText(text).catch(() => undefined);
       }
-      showToast(`已复制${label}`, 'success');
+      showToast(TRANSLATIONS[langRef.current].toasts.copied(label), 'success');
     },
     [showToast]
   );
 
-  // Live simulation loop for active transcriptions, downloads & conversions
+  // Live progress loop for active transcriptions, downloads & conversions
   useEffect(() => {
     const timer = window.setInterval(() => {
-      // 1. Advance active transcription tasks through realistic cloud stages
+      // 1. Advance active transcription tasks through cloud stages
       setTranscriptions((prev) => {
-        const hasActive = prev.some((t) => t.stage !== 'completed');
+        const hasActive = prev.some((item) => item.stage !== 'completed');
         if (!hasActive) return prev;
         return prev.map((task) => {
           if (task.stage === 'completed') return task;
@@ -192,13 +159,13 @@ export default function App() {
             stage: nextStage,
             segments:
               nextStage === 'completed'
-                ? generateSimulatedTranscript(task.fileName, task.preset, task.language)
+                ? generateSimulatedTranscript(task.fileName, task.preset, task.language, langRef.current)
                 : task.segments,
           };
         });
       });
 
-      // 2. Advance demo/local-monitored multi-chunk downloads (real web_range tasks update from live bytes)
+      // 2. Advance local-monitored / fallback multi-chunk downloads (real web_range updates from live bytes)
       setDownloads((prev) => {
         const hasActiveDemo = prev.some(
           (d) =>
@@ -239,7 +206,7 @@ export default function App() {
         });
       });
 
-      // 3. Advance active document conversions
+      // 3. Advance active format conversions
       setConversions((prev) => {
         const hasActive = prev.some((c) => c.status === 'converting');
         if (!hasActive) return prev;
@@ -270,6 +237,7 @@ export default function App() {
       language: TranscriptLanguage;
       source: 'agent' | 'manual';
     }) => {
+      const tr = TRANSLATIONS[langRef.current].toasts;
       const needsAudioExtract = params.mediaKind === 'video' && config.ffmpegAutoExtract;
       const task: TranscriptionTask = {
         id: `tr-${Date.now()}`,
@@ -288,10 +256,7 @@ export default function App() {
         source: params.source,
       };
       setTranscriptions((prev) => [task, ...prev]);
-      showToast(
-        needsAudioExtract ? '已识别视频，开始自动抽离音轨并转录' : '已提交至云端 T4 转录队列',
-        'success'
-      );
+      showToast(needsAudioExtract ? tr.videoAudioQueued : tr.cloudTranscribeQueued, 'success');
       return task.id;
     },
     [config.ffmpegAutoExtract, showToast]
@@ -313,6 +278,7 @@ export default function App() {
       autoStart?: boolean;
       handledByLocal?: boolean;
     }) => {
+      const tr = TRANSLATIONS[langRef.current].toasts;
       const taskId = `dl-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
       const chunkCount = getChunkCountForThreads(params.threads);
       const shouldStart = params.autoStart ?? true;
@@ -381,25 +347,27 @@ export default function App() {
           if (res.ok) {
             setDownloads((prev) =>
               prev.map((item) =>
-                item.id === taskId ? { ...item, savedLocationLabel: '本地分片引擎直写' } : item
+                item.id === taskId
+                  ? { ...item, savedLocationLabel: TRANSLATIONS[langRef.current].toasts.localEngineDirectLabel }
+                  : item
               )
             );
           }
         });
-        showToast(`已交由本地引擎 ${chunkCount} 分片直写硬盘`, 'success');
+        showToast(tr.localEngineStarted(chunkCount), 'success');
         return taskId;
       }
 
       if (params.handledByLocal) {
-        showToast(`已通过插件交由本地引擎下载：${params.fileName}`, 'success');
+        showToast(tr.pluginLocalDownload(params.fileName), 'success');
         return taskId;
       }
 
-      // 2) Published Web App Direct Multi-Chunk HTTP Range Download (no local software needed!)
+      // 2) Published Web App Direct Multi-Chunk HTTP Range Download
       if (executionMode === 'web_range' && shouldStart) {
         const ac = new AbortController();
         abortControllersRef.current.set(taskId, ac);
-        showToast(`网页端已启动 ${chunkCount} 分片并发拉取`, 'success');
+        showToast(tr.webRangeStarted(chunkCount), 'success');
 
         runWebMultiChunkDownload({
           url: params.cleanUrl,
@@ -421,12 +389,13 @@ export default function App() {
             },
             onComplete: ({ savedVia, totalMB }) => {
               abortControllersRef.current.delete(taskId);
+              const currToasts = TRANSLATIONS[langRef.current].toasts;
               const label =
                 savedVia === 'directory_handle'
-                  ? '已写入选定本地文件夹'
+                  ? currToasts.savedToDir
                   : savedVia === 'extension_download'
-                    ? '已通过插件保存到电脑'
-                    : '已保存到浏览器下载目录';
+                    ? currToasts.savedViaExtension
+                    : currToasts.savedToBrowser;
               setDownloads((prev) =>
                 prev.map((item) =>
                   item.id === taskId
@@ -442,12 +411,12 @@ export default function App() {
                     : item
                 )
               );
-              showToast(`${params.fileName} ${label}`, 'success');
+              showToast(`${params.fileName} · ${label}`, 'success');
             },
             onFallback: (reason) => {
               abortControllersRef.current.delete(taskId);
               if (ac.signal.aborted) return;
-              // Gracefully keep task interactive if cross-origin or video-platform page needs extension/local engine
+              const currToasts = TRANSLATIONS[langRef.current].toasts;
               setDownloads((prev) =>
                 prev.map((item) =>
                   item.id === taskId
@@ -457,15 +426,15 @@ export default function App() {
                         totalMB: estimatedTotalMB,
                         chunks: Array.from({ length: chunkCount }, () => 8),
                         savedLocationLabel:
-                          reason === 'cors_blocked' ? '跨域受限（需插件或本地引擎）' : undefined,
+                          reason === 'cors_blocked' ? currToasts.corsLimitedLabel : undefined,
                       }
                     : item
                 )
               );
               showToast(
                 params.engine === 'ytdlp'
-                  ? '视频平台受跨域限制，安装 JoelDeskPro 插件或启动本地引擎即可直存电脑'
-                  : '该源站限制浏览器跨域直连，建议安装 JoelDeskPro 插件或启动本地引擎',
+                  ? currToasts.corsVideoFallback
+                  : currToasts.corsDirectFallback,
                 'warning'
               );
             },
@@ -475,9 +444,9 @@ export default function App() {
       }
 
       if (params.source === 'chrome_extension') {
-        showToast(`已通过 JoelDeskPro 插件接收：${params.fileName}`, 'success');
+        showToast(tr.pluginReceived(params.fileName), 'success');
       } else {
-        showToast(`已启动 ${params.threads} 线程 · ${chunkCount} 分片并发下载`, 'success');
+        showToast(tr.multiThreadStarted(params.threads, chunkCount), 'success');
       }
       return taskId;
     },
@@ -505,14 +474,14 @@ export default function App() {
       setLocalEngineOnline(res.online);
     });
     setConfig((prev) => ({ ...prev, chromeBridgeEnabled: true }));
-    showToast('正在向 JoelDeskPro 插件发送双向握手信号…', 'neutral');
+    showToast(TRANSLATIONS[langRef.current].toasts.handshakeSending, 'neutral');
   }, [config.chromeBridgePort, config.chromeBridgeToken, showToast]);
 
   const handleChromeExtensionCapture = useCallback(
     (payload: ChromeExtensionPayload) => {
       const extracted = extractCleanUrl(payload.url);
       if (!extracted.cleanUrl) {
-        showToast('插件推送的链接无效', 'warning');
+        showToast(TRANSLATIONS[langRef.current].toasts.invalidPluginUrl, 'warning');
         return;
       }
       if (!chromeConnected) {
@@ -543,7 +512,7 @@ export default function App() {
     ]
   );
 
-  // Auto-announce DeskKit Web App to installed Chrome Extension & probe optional local engine on mount
+  // Auto-announce Web App to installed Chrome Extension & probe optional local engine on mount
   useEffect(() => {
     const sayHello = () => {
       window.postMessage(
@@ -563,7 +532,188 @@ export default function App() {
     return () => window.clearTimeout(retryTimer);
   }, [config.chromeBridgePort]);
 
-  // Listen to real Chrome Extension content-script postMessage events (Web + Local dual-bridge)
+  // Poll real local compute runtime state every 2s when local engine is online
+  useEffect(() => {
+    if (!localEngineOnline) {
+      setComputeState((prev) =>
+        prev.status === 'offline' && !prev.errorMessage ? prev : INITIAL_COMPUTE_STATE
+      );
+      return;
+    }
+
+    let cancelled = false;
+    const poll = async () => {
+      const snap = await fetchLocalComputeState(config.chromeBridgePort);
+      if (cancelled || !snap) return;
+      setComputeState(snap.compute);
+      if (snap.settings) {
+        setConfig((prev) => {
+          const nextEnabled = snap.settings?.autoShutdownEnabled ?? prev.autoShutdownEnabled;
+          const nextMinutes = snap.settings?.autoShutdownMinutes ?? prev.autoShutdownMinutes;
+          if (
+            nextEnabled === prev.autoShutdownEnabled &&
+            nextMinutes === prev.autoShutdownMinutes
+          ) {
+            return prev;
+          }
+          return {
+            ...prev,
+            autoShutdownEnabled: nextEnabled,
+            autoShutdownMinutes: nextMinutes,
+          };
+        });
+      }
+    };
+
+    poll();
+    const timer = window.setInterval(poll, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [localEngineOnline, config.chromeBridgePort]);
+
+  const handleConnectCompute = useCallback(
+    async (provider: ComputeProvider, modelName: string) => {
+      const ct = TRANSLATIONS[langRef.current].transcribe.compute;
+      const gpu = provider === 'kaggle-t4' ? 'T4 x2' : config.colabGpuSpec;
+
+      if (!localEngineOnline) {
+        openExternalTab(getComputeBrowserAuthUrl(provider, false, config.chromeBridgePort));
+        showToast(
+          provider === 'kaggle-t4' ? ct.openedKaggleLogin : ct.openedColabLogin,
+          'success'
+        );
+        return;
+      }
+
+      setComputeState((prev) => ({
+        ...prev,
+        status: 'starting',
+        provider,
+        gpu,
+        model: modelName,
+        errorMessage: null,
+      }));
+
+      const res = await startLocalCompute(config.chromeBridgePort, config.chromeBridgeToken, {
+        provider,
+        gpu,
+        model: modelName,
+      });
+
+      if (res.needsAuth) {
+        setComputeState((prev) => ({ ...prev, status: 'offline' }));
+        openExternalTab(
+          res.authUrl || getComputeBrowserAuthUrl(provider, true, config.chromeBridgePort)
+        );
+        showToast(
+          provider === 'kaggle-t4' ? ct.openedKaggleLogin : ct.openedColabLogin,
+          'success'
+        );
+        return;
+      }
+
+      if (res.snapshot) {
+        setComputeState(res.snapshot.compute);
+        showToast(
+          ct.startingComputeToast(provider === 'kaggle-t4' ? 'Kaggle' : 'Colab', gpu),
+          'success'
+        );
+        return;
+      }
+
+      // Fallback: open provider login directly in browser
+      setComputeState((prev) => ({ ...prev, status: 'offline' }));
+      openExternalTab(getComputeBrowserAuthUrl(provider, false, config.chromeBridgePort));
+      showToast(
+        provider === 'kaggle-t4' ? ct.openedKaggleLogin : ct.openedColabLogin,
+        'neutral'
+      );
+    },
+    [
+      config.chromeBridgePort,
+      config.chromeBridgeToken,
+      config.colabGpuSpec,
+      localEngineOnline,
+      showToast,
+    ]
+  );
+
+  const handleStopCompute = useCallback(async () => {
+    const ct = TRANSLATIONS[langRef.current].transcribe.compute;
+    if (!localEngineOnline) {
+      setComputeState(INITIAL_COMPUTE_STATE);
+      return;
+    }
+    setComputeState((prev) => ({ ...prev, status: 'stopping' }));
+    const snap = await stopLocalCompute(config.chromeBridgePort, config.chromeBridgeToken);
+    if (snap) {
+      setComputeState(snap.compute);
+    } else {
+      setComputeState(INITIAL_COMPUTE_STATE);
+    }
+    showToast(ct.stoppedComputeToast, 'neutral');
+  }, [config.chromeBridgePort, config.chromeBridgeToken, localEngineOnline, showToast]);
+
+  const handleRefreshCompute = useCallback(async () => {
+    const ct = TRANSLATIONS[langRef.current].transcribe.compute;
+    const probe = await probeLocalEngine(config.chromeBridgePort);
+    setLocalEngineOnline(probe.online);
+    if (probe.online) {
+      const snap = await refreshLocalCompute(config.chromeBridgePort, config.chromeBridgeToken);
+      if (snap) setComputeState(snap.compute);
+    } else {
+      setComputeState(INITIAL_COMPUTE_STATE);
+    }
+    showToast(ct.refreshedComputeToast, 'neutral');
+  }, [config.chromeBridgePort, config.chromeBridgeToken, showToast]);
+
+  const handleToggleAutoShutdown = useCallback(
+    (enabled: boolean) => {
+      setConfig((prev) => ({ ...prev, autoShutdownEnabled: enabled }));
+      if (localEngineOnline) {
+        syncLocalComputeSettings(config.chromeBridgePort, config.chromeBridgeToken, {
+          auto_shutdown_enabled: enabled,
+          auto_shutdown_minutes: config.autoShutdownMinutes,
+        }).then((snap) => {
+          if (snap) setComputeState(snap.compute);
+        });
+      }
+    },
+    [
+      config.autoShutdownMinutes,
+      config.chromeBridgePort,
+      config.chromeBridgeToken,
+      localEngineOnline,
+    ]
+  );
+
+  const handleChangeAutoShutdownMinutes = useCallback(
+    (minutes: IdleShutdownMinutes) => {
+      setConfig((prev) => ({ ...prev, autoShutdownMinutes: minutes }));
+      if (localEngineOnline) {
+        syncLocalComputeSettings(config.chromeBridgePort, config.chromeBridgeToken, {
+          auto_shutdown_enabled: config.autoShutdownEnabled,
+          auto_shutdown_minutes: minutes,
+        }).then((snap) => {
+          if (snap) setComputeState(snap.compute);
+        });
+      }
+    },
+    [
+      config.autoShutdownEnabled,
+      config.chromeBridgePort,
+      config.chromeBridgeToken,
+      localEngineOnline,
+    ]
+  );
+
+  const handleSelectColabGpu = useCallback((gpu: ColabGpuSpec) => {
+    setConfig((prev) => ({ ...prev, colabGpuSpec: gpu }));
+  }, []);
+
+  // Listen to real Chrome Extension content-script postMessage events
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (!event.data || typeof event.data !== 'object') return;
@@ -572,10 +722,9 @@ export default function App() {
         if (typeof event.data.localOnline === 'boolean') {
           setLocalEngineOnline(event.data.localOnline);
         }
+        const currToasts = TRANSLATIONS[langRef.current].toasts;
         showToast(
-          event.data.localOnline
-            ? 'JoelDeskPro 插件已连接（网页端 + 本地引擎双通道在线）'
-            : 'JoelDeskPro 插件已直连当前网页端，看视频右上角可一键下载',
+          event.data.localOnline ? currToasts.pluginDualConnected : currToasts.pluginWebConnected,
           'success'
         );
         return;
@@ -596,6 +745,102 @@ export default function App() {
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, [handleChromeExtensionCapture, showToast]);
+
+  const handleCheckGitHubUpdate = useCallback(
+    async (silent = false) => {
+      setCheckingUpdate(true);
+      setUpdateError(null);
+      try {
+        const info = await checkGitHubUpdate(
+          config.githubRepo,
+          config.githubBranch,
+          langRef.current
+        );
+        setUpdateInfo(info);
+        if (!silent) {
+          const currToasts = TRANSLATIONS[langRef.current].toasts;
+          showToast(
+            info.hasUpdate
+              ? currToasts.foundGitHubCommit(info.shortSha)
+              : currToasts.alreadyLatest,
+            info.hasUpdate ? 'success' : 'neutral'
+          );
+        }
+      } catch (err) {
+        const msg =
+          err instanceof Error
+            ? err.message
+            : TRANSLATIONS[langRef.current].toasts.checkUpdateFailed;
+        setUpdateError(msg);
+        if (!silent) showToast(msg, 'warning');
+      } finally {
+        setCheckingUpdate(false);
+      }
+    },
+    [config.githubBranch, config.githubRepo, showToast]
+  );
+
+  // Only auto-check on startup when user explicitly turns on autoCheckUpdate (off by default for private repos)
+  useEffect(() => {
+    if (!config.autoCheckUpdate) return;
+    handleCheckGitHubUpdate(true);
+  }, [config.autoCheckUpdate, handleCheckGitHubUpdate]);
+
+  const handleOpenUpdateModal = useCallback(() => {
+    setUpdateModalOpen(true);
+    setLocalUpdateResult(null);
+    setUpdateError(null);
+    probeLocalEngine(config.chromeBridgePort).then((res) => {
+      setLocalEngineOnline(res.online);
+    });
+    if (config.autoCheckUpdate) {
+      handleCheckGitHubUpdate(true);
+    }
+  }, [config.autoCheckUpdate, config.chromeBridgePort, handleCheckGitHubUpdate]);
+
+  const handlePullLocalUpdate = useCallback(async () => {
+    setUpdatingLocal(true);
+    setLocalUpdateResult(null);
+    const result = await triggerLocalClientUpdate(
+      config.chromeBridgePort,
+      config.chromeBridgeToken,
+      config.githubRepo,
+      config.githubBranch,
+      langRef.current
+    );
+    setUpdatingLocal(false);
+    setLocalUpdateResult(result);
+    if (result.ok) {
+      if (result.updatedSha) {
+        setSyncedCommitSha(result.updatedSha);
+      }
+      setUpdateInfo((prev) =>
+        prev
+          ? {
+              ...prev,
+              hasUpdate: false,
+              syncedSha: result.updatedSha || prev.latestSha,
+            }
+          : prev
+      );
+      showToast(TRANSLATIONS[langRef.current].toasts.localUpdated, 'success');
+    } else {
+      showToast(result.message, 'warning');
+    }
+  }, [
+    config.chromeBridgePort,
+    config.chromeBridgeToken,
+    config.githubBranch,
+    config.githubRepo,
+    showToast,
+  ]);
+
+  const handleMarkSyncedAndReload = useCallback(() => {
+    if (updateInfo?.latestSha) {
+      setSyncedCommitSha(updateInfo.latestSha);
+    }
+    window.location.reload();
+  }, [updateInfo]);
 
   const createConversionTask = useCallback(
     (params: {
@@ -619,7 +864,10 @@ export default function App() {
       };
       setConversions((prev) => [task, ...prev]);
       if (params.autoStart) {
-        showToast(`正在转换为 ${params.targetFormat.toUpperCase()}`, 'success');
+        showToast(
+          TRANSLATIONS[langRef.current].toasts.convertingTo(params.targetFormat.toUpperCase()),
+          'success'
+        );
       }
       return task.id;
     },
@@ -635,7 +883,7 @@ export default function App() {
       attachments,
       timestamp: nowTimeLabel(),
     };
-    const parsed = parseAgentIntent(text, attachments, config);
+    const parsed = parseAgentIntent(text, attachments, config, lang);
     const assistantMsg: AgentMessage = {
       id: `msg-a-${Date.now() + 1}`,
       role: 'assistant',
@@ -698,19 +946,10 @@ export default function App() {
   };
 
   const activeCounts = {
-    transcribe: transcriptions.filter((t) => t.stage !== 'completed').length,
-    download: downloads.filter((d) => d.status === 'downloading').length,
-    convert: conversions.filter((c) => c.status === 'converting').length,
+    transcribe: transcriptions.filter((item) => item.stage !== 'completed').length,
+    download: downloads.filter((item) => item.status === 'downloading').length,
+    convert: conversions.filter((item) => item.status === 'converting').length,
   };
-
-  // Dynamic system load derived from real active workloads across modules
-  const systemLoad = Math.min(
-    96,
-    12 +
-      activeCounts.transcribe * 26 +
-      activeCounts.download * 19 +
-      activeCounts.convert * 14
-  );
 
   // Single contextual right-side header action per workspace
   const renderTopBarAction = () => {
@@ -720,12 +959,12 @@ export default function App() {
           type="button"
           onClick={() => {
             setMessages([]);
-            showToast('已开启新对话');
+            showToast(t.toasts.newChatStarted);
           }}
           className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3.5 py-1.5 text-[12px] font-medium text-[#0F172A] hover:bg-[#F8F9FA] whitespace-nowrap shrink-0"
         >
           <Plus className="h-3.5 w-3.5" />
-          新建对话
+          {t.topbar.newChat}
         </button>
       );
     }
@@ -735,12 +974,12 @@ export default function App() {
           type="button"
           onClick={() => {
             setDownloads((prev) => prev.filter((d) => d.status !== 'completed'));
-            showToast('已清理已完成的下载记录');
+            showToast(t.toasts.clearedDownloads);
           }}
           className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3.5 py-1.5 text-[12px] font-medium text-[#475569] hover:bg-[#F8F9FA] hover:text-[#0F172A] whitespace-nowrap shrink-0"
         >
           <Trash2 className="h-3.5 w-3.5" />
-          清理已完成
+          {t.topbar.clearCompleted}
         </button>
       );
     }
@@ -750,12 +989,12 @@ export default function App() {
           type="button"
           onClick={() => {
             setConversions((prev) => prev.filter((c) => c.status !== 'completed'));
-            showToast('已清理已完成的转换记录');
+            showToast(t.toasts.clearedConversions);
           }}
           className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3.5 py-1.5 text-[12px] font-medium text-[#475569] hover:bg-[#F8F9FA] hover:text-[#0F172A] whitespace-nowrap shrink-0"
         >
           <Trash2 className="h-3.5 w-3.5" />
-          清理已完成
+          {t.topbar.clearCompleted}
         </button>
       );
     }
@@ -765,10 +1004,12 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#F8F9FA] text-[#0F172A]">
       <Sidebar
+        lang={lang}
         activeView={activeView}
         onSelectView={setActiveView}
         activeCounts={activeCounts}
-        systemLoad={systemLoad}
+        hasUpdate={Boolean(updateInfo?.hasUpdate)}
+        onOpenUpdateModal={handleOpenUpdateModal}
         mobileOpen={mobileNavOpen}
         onCloseMobile={() => setMobileNavOpen(false)}
       />
@@ -781,23 +1022,56 @@ export default function App() {
             <button
               type="button"
               onClick={() => setMobileNavOpen(true)}
-              aria-label="打开侧边栏"
+              aria-label={t.sidebar.openSidebar}
               className="flex h-8 w-8 items-center justify-center rounded-control text-[#475569] hover:bg-[#F3F4F6] lg:hidden"
             >
               <Menu className="h-4 w-4" />
             </button>
             <h1 className="text-[15px] font-semibold tracking-tight text-[#0F172A] whitespace-nowrap">
-              {VIEW_TITLES[activeView]}
+              {t.views[activeView]}
             </h1>
           </div>
 
-          <div className="flex items-center gap-2">{renderTopBarAction()}</div>
+          <div className="flex items-center gap-2.5 shrink-0">
+            {renderTopBarAction()}
+
+            {/* Bilingual EN / 中文 Switcher */}
+            <div
+              role="group"
+              aria-label="Language"
+              className="inline-flex items-center gap-0.5 rounded-control bg-[#F3F4F6] p-0.5 shrink-0"
+            >
+              <button
+                type="button"
+                onClick={() => handleChangeLanguage('en')}
+                className={`rounded-inner px-2.5 py-1 text-[12px] font-medium transition-colors whitespace-nowrap ${
+                  lang === 'en'
+                    ? 'bg-white text-[#0F172A] shadow-xs'
+                    : 'text-[#64748B] hover:text-[#0F172A]'
+                }`}
+              >
+                EN
+              </button>
+              <button
+                type="button"
+                onClick={() => handleChangeLanguage('zh')}
+                className={`rounded-inner px-2.5 py-1 text-[12px] font-medium transition-colors whitespace-nowrap ${
+                  lang === 'zh'
+                    ? 'bg-white text-[#0F172A] shadow-xs'
+                    : 'text-[#64748B] hover:text-[#0F172A]'
+                }`}
+              >
+                中文
+              </button>
+            </div>
+          </div>
         </header>
 
         {/* Active Workspace View */}
         <main className="min-h-0 flex-1">
           {activeView === 'agent' && (
             <AgentView
+              lang={lang}
               messages={messages}
               onSendMessage={handleSendAgentMessage}
               onUpdateAction={handleUpdateAgentAction}
@@ -809,7 +1083,19 @@ export default function App() {
 
           {activeView === 'transcribe' && (
             <TranscribeView
+              lang={lang}
               tasks={transcriptions}
+              computeState={computeState}
+              colabGpuSpec={config.colabGpuSpec}
+              autoShutdownEnabled={config.autoShutdownEnabled}
+              autoShutdownMinutes={config.autoShutdownMinutes}
+              localEngineOnline={localEngineOnline}
+              onSelectColabGpu={handleSelectColabGpu}
+              onConnectCompute={handleConnectCompute}
+              onStopCompute={handleStopCompute}
+              onRefreshCompute={handleRefreshCompute}
+              onToggleAutoShutdown={handleToggleAutoShutdown}
+              onChangeAutoShutdownMinutes={handleChangeAutoShutdownMinutes}
               onCreateTask={(params) => createTranscriptionTask({ ...params, source: 'manual' })}
               onChangeTaskOutputFormat={(id, outputFormat) =>
                 setTranscriptions((prev) =>
@@ -825,6 +1111,7 @@ export default function App() {
 
           {activeView === 'download' && (
             <DownloadView
+              lang={lang}
               tasks={downloads}
               config={config}
               chromeConnected={chromeConnected}
@@ -835,15 +1122,16 @@ export default function App() {
                 localDirHandleRef.current = handle;
                 setHasRealDirHandle(Boolean(handle));
                 if (handle) {
-                  setConfig((prev) => ({ ...prev, defaultSaveDir: `本地文件夹 / ${handle.name}` }));
-                  showToast(`已授权直写本地文件夹：${handle.name}`, 'success');
+                  const prefix = lang === 'zh' ? '本地文件夹' : 'Local Folder';
+                  setConfig((prev) => ({ ...prev, defaultSaveDir: `${prefix} / ${handle.name}` }));
+                  showToast(t.toasts.dirAuthorized(handle.name), 'success');
                 }
               }}
               onChangeSaveDir={(dir) => {
                 localDirHandleRef.current = null;
                 setHasRealDirHandle(false);
                 setConfig((prev) => ({ ...prev, defaultSaveDir: dir }));
-                showToast(`下载保存路径已切换为 ${dir}`, 'success');
+                showToast(t.toasts.saveDirSwitched(dir), 'success');
               }}
               onCreateDownload={(params) =>
                 createDownloadTask({
@@ -904,6 +1192,7 @@ export default function App() {
 
           {activeView === 'convert' && (
             <ConvertView
+              lang={lang}
               tasks={conversions}
               onAddTask={(params) => createConversionTask({ ...params, source: 'manual' })}
               onUpdateTargetFormat={(id, targetFormat) =>
@@ -926,7 +1215,7 @@ export default function App() {
                       : item
                   )
                 );
-                showToast('已开始批量格式转换', 'success');
+                showToast(t.toasts.batchConvertStarted, 'success');
               }}
               onDeleteTask={(id) => setConversions((prev) => prev.filter((item) => item.id !== id))}
             />
@@ -934,16 +1223,43 @@ export default function App() {
 
           {activeView === 'settings' && (
             <SettingsView
+              lang={lang}
               config={config}
               onSaveConfig={(next) => {
                 setConfig(next);
-                showToast('接口配置已保存', 'success');
+                if (localEngineOnline) {
+                  syncLocalComputeSettings(next.chromeBridgePort, next.chromeBridgeToken, {
+                    auto_shutdown_enabled: next.autoShutdownEnabled,
+                    auto_shutdown_minutes: next.autoShutdownMinutes,
+                  }).then((snap) => {
+                    if (snap) setComputeState(snap.compute);
+                  });
+                }
+                showToast(t.toasts.configSaved, 'success');
               }}
+              onOpenUpdateModal={handleOpenUpdateModal}
               onCopyText={handleCopyText}
             />
           )}
         </main>
       </div>
+
+      <UpdateModal
+        lang={lang}
+        open={updateModalOpen}
+        onClose={() => setUpdateModalOpen(false)}
+        config={config}
+        localEngineOnline={localEngineOnline}
+        updateInfo={updateInfo}
+        checking={checkingUpdate}
+        checkError={updateError}
+        updatingLocal={updatingLocal}
+        localUpdateResult={localUpdateResult}
+        onCheckNow={() => handleCheckGitHubUpdate(false)}
+        onPullLocalUpdate={handlePullLocalUpdate}
+        onMarkSyncedAndReload={handleMarkSyncedAndReload}
+        onCopyText={handleCopyText}
+      />
 
       {/* Subtle Floating Toast */}
       {toast && (

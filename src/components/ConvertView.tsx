@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ArrowRight,
   AudioWaveform,
@@ -22,8 +22,10 @@ import {
   isVideoFormat,
   triggerClientFileDownload,
 } from '../services/toolkitAdapter';
+import { AppLanguage, TRANSLATIONS } from '../i18n';
 
 interface ConvertViewProps {
+  lang: AppLanguage;
   tasks: ConversionTask[];
   onAddTask: (params: {
     fileName: string;
@@ -41,6 +43,7 @@ interface ConvertViewProps {
 type QuickPresetMode = 'auto' | 'pdf-docx' | 'docx-pdf' | 'pdf-png' | 'md-pdf';
 
 export function ConvertView({
+  lang,
   tasks,
   onAddTask,
   onUpdateTargetFormat,
@@ -48,6 +51,7 @@ export function ConvertView({
   onStartAllReady,
   onDeleteTask,
 }: ConvertViewProps) {
+  const t = TRANSLATIONS[lang];
   const [presetMode, setPresetMode] = useState<QuickPresetMode>('auto');
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -74,7 +78,7 @@ export function ConvertView({
     });
   };
 
-  const readyCount = tasks.filter((t) => t.status === 'ready').length;
+  const readyCount = tasks.filter((item) => item.status === 'ready').length;
 
   return (
     <div className="h-full overflow-y-auto bg-[#F8F9FA] px-5 py-6 sm:px-8">
@@ -85,11 +89,11 @@ export function ConvertView({
             <div className="inline-flex flex-wrap items-center gap-1 rounded-control bg-[#F3F4F6] p-1">
               {(
                 [
-                  { id: 'auto', label: '自动识别' },
-                  { id: 'pdf-docx', label: 'PDF → Word' },
-                  { id: 'docx-pdf', label: 'Word → PDF' },
-                  { id: 'pdf-png', label: 'PDF → 图片' },
-                  { id: 'md-pdf', label: 'Markdown → PDF' },
+                  { id: 'auto', label: t.convert.presets.auto },
+                  { id: 'pdf-docx', label: t.convert.presets.pdfDocx },
+                  { id: 'docx-pdf', label: t.convert.presets.docxPdf },
+                  { id: 'pdf-png', label: t.convert.presets.pdfPng },
+                  { id: 'md-pdf', label: t.convert.presets.mdPdf },
                 ] as const
               ).map((item) => (
                 <button
@@ -145,61 +149,8 @@ export function ConvertView({
               }}
             />
             <Upload className="h-5 w-5 text-[#64748B]" strokeWidth={1.8} />
-            <p className="mt-2.5 text-[14px] font-medium text-[#0F172A]">
-              拖入文档或音视频文件，自动匹配可转换的目标格式
-            </p>
-            <p className="mt-1 text-[12px] text-[#64748B]">
-              支持 PDF / Word / Markdown 以及 MP4 / MKV / MOV / MP3 / WAV / FLAC 批量互转
-            </p>
-          </div>
-
-          {/* Demo Sample Loaders */}
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-[12px] text-[#64748B]">
-            <span>快速加入示例文档：</span>
-            <button
-              type="button"
-              onClick={() =>
-                onAddTask({
-                  fileName: '合同审批附件_2026.pdf',
-                  fileSizeBytes: 2.9 * 1024 * 1024,
-                  sourceFormat: 'pdf',
-                  targetFormat: resolveTargetForFile('pdf'),
-                })
-              }
-              className="font-medium text-[#2563EB] hover:text-[#1D4ED8] whitespace-nowrap"
-            >
-              示例 PDF
-            </button>
-            <span aria-hidden="true">·</span>
-            <button
-              type="button"
-              onClick={() =>
-                onAddTask({
-                  fileName: '产品需求说明书.docx',
-                  fileSizeBytes: 1.6 * 1024 * 1024,
-                  sourceFormat: 'docx',
-                  targetFormat: resolveTargetForFile('docx'),
-                })
-              }
-              className="font-medium text-[#2563EB] hover:text-[#1D4ED8] whitespace-nowrap"
-            >
-              示例 Word (.docx)
-            </button>
-            <span aria-hidden="true">·</span>
-            <button
-              type="button"
-              onClick={() =>
-                onAddTask({
-                  fileName: '接口对接文档.md',
-                  fileSizeBytes: 84 * 1024,
-                  sourceFormat: 'md',
-                  targetFormat: resolveTargetForFile('md'),
-                })
-              }
-              className="font-medium text-[#2563EB] hover:text-[#1D4ED8] whitespace-nowrap"
-            >
-              示例 Markdown
-            </button>
+            <p className="mt-2.5 text-[14px] font-medium text-[#0F172A]">{t.convert.dropTitle}</p>
+            <p className="mt-1 text-[12px] text-[#64748B]">{t.convert.dropHint}</p>
           </div>
         </section>
 
@@ -208,9 +159,9 @@ export function ConvertView({
           <div className="flex items-center justify-between border-b border-[#E5E7EB] px-5 py-3">
             <div className="flex items-center gap-2">
               <FileOutput className="h-4 w-4 text-[#64748B]" />
-              <h2 className="text-[14px] font-semibold text-[#0F172A]">转换队列</h2>
+              <h2 className="text-[14px] font-semibold text-[#0F172A]">{t.convert.queueTitle}</h2>
               <span className="font-mono text-[12px] text-[#64748B] tabular-nums">
-                · {tasks.length} 项
+                · {t.convert.itemCount(tasks.length)}
               </span>
             </div>
 
@@ -221,14 +172,14 @@ export function ConvertView({
                 className="inline-flex items-center gap-1.5 rounded-control bg-[#2563EB] px-3.5 py-1.5 text-[12px] font-medium text-white hover:bg-[#1D4ED8] whitespace-nowrap"
               >
                 <Play className="h-3 w-3 fill-current" />
-                全部开始转换 ({readyCount})
+                {t.convert.startAllReady(readyCount)}
               </button>
             )}
           </div>
 
           {tasks.length === 0 ? (
             <div className="px-5 py-14 text-center text-[13px] text-[#64748B]">
-              暂无待转换文档，拖入文件或点击上方示例即可体验
+              {t.convert.emptyQueue}
             </div>
           ) : (
             <div className="divide-y divide-[#E5E7EB]">
@@ -258,11 +209,11 @@ export function ConvertView({
                           {formatBytes(task.fileSizeBytes)}
                         </span>
                         <span aria-hidden="true">·</span>
-                        <span>{formatLabel(task.sourceFormat)}</span>
+                        <span>{formatLabel(task.sourceFormat, lang)}</span>
                         <ArrowRight className="h-3 w-3 text-[#94A3B8]" />
                         {task.status === 'ready' ? (
                           <select
-                            aria-label="选择目标格式"
+                            aria-label={t.convert.selectFormatAria}
                             value={task.targetFormat}
                             onChange={(e) =>
                               onUpdateTargetFormat(task.id, e.target.value as DocumentFormat)
@@ -271,13 +222,13 @@ export function ConvertView({
                           >
                             {availableTargets.map((fmt) => (
                               <option key={fmt} value={fmt}>
-                                {formatLabel(fmt)}
+                                {formatLabel(fmt, lang)}
                               </option>
                             ))}
                           </select>
                         ) : (
                           <span className="font-medium text-[#0F172A]">
-                            {formatLabel(task.targetFormat)}
+                            {formatLabel(task.targetFormat, lang)}
                           </span>
                         )}
                       </div>
@@ -304,13 +255,13 @@ export function ConvertView({
                           onClick={() => onStartTask(task.id)}
                           className="inline-flex items-center gap-1.5 rounded-control bg-[#2563EB] px-3.5 py-1.5 text-[12px] font-medium text-white hover:bg-[#1D4ED8] whitespace-nowrap"
                         >
-                          转换
+                          {t.convert.convertBtn}
                         </button>
                       )}
 
                       {isConverting && (
                         <span className="text-[12px] font-medium text-[#D97706] whitespace-nowrap">
-                          转换中
+                          {t.convert.converting}
                         </span>
                       )}
 
@@ -321,21 +272,21 @@ export function ConvertView({
                             const base = task.fileName.replace(/\.[^.]+$/, '');
                             triggerClientFileDownload(
                               `${base}.${task.targetFormat}`,
-                              `Joel Desk Pro 格式转换原型输出\n源文件: ${task.fileName}\n目标格式: ${task.targetFormat.toUpperCase()}\n`
+                              t.convert.outputHeader(task.fileName, task.targetFormat.toUpperCase())
                             );
                           }}
                           className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3.5 py-1.5 text-[12px] font-medium text-[#0F172A] hover:bg-[#F8F9FA] whitespace-nowrap"
                         >
                           <Check className="h-3.5 w-3.5 text-[#16A34A]" />
                           <Download className="h-3.5 w-3.5 text-[#64748B]" />
-                          导出 .{task.targetFormat}
+                          {t.convert.exportExt(task.targetFormat)}
                         </button>
                       )}
 
                       <button
                         type="button"
                         onClick={() => onDeleteTask(task.id)}
-                        aria-label="移除文件"
+                        aria-label={t.convert.removeFile}
                         className="flex h-8 w-8 items-center justify-center rounded-control border border-[#E5E7EB] bg-white text-[#94A3B8] hover:border-[#FECACA] hover:text-[#DC2626]"
                       >
                         <Trash2 className="h-3.5 w-3.5" />

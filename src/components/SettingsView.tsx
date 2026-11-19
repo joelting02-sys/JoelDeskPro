@@ -1,15 +1,30 @@
 import { useEffect, useState } from 'react';
-import { Check, ChevronDown, ChevronUp, Copy, Plug, Save } from 'lucide-react';
-import { EndpointConfig, ThreadCount } from '../types/toolkit';
+import { Check, ChevronDown, ChevronUp, Copy, Plug, RefreshCw, Save } from 'lucide-react';
+import {
+  ColabGpuSpec,
+  EndpointConfig,
+  IdleShutdownMinutes,
+  ThreadCount,
+} from '../types/toolkit';
 import { API_PROTOCOL_SNIPPETS } from '../services/toolkitAdapter';
+import { AppLanguage, TRANSLATIONS } from '../i18n';
 
 interface SettingsViewProps {
+  lang: AppLanguage;
   config: EndpointConfig;
   onSaveConfig: (next: EndpointConfig) => void;
+  onOpenUpdateModal: () => void;
   onCopyText: (text: string, label: string) => void;
 }
 
-export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewProps) {
+export function SettingsView({
+  lang,
+  config,
+  onSaveConfig,
+  onOpenUpdateModal,
+  onCopyText,
+}: SettingsViewProps) {
+  const t = TRANSLATIONS[lang];
   const [form, setForm] = useState<EndpointConfig>(config);
   const [testingKey, setTestingKey] = useState<string | null>(null);
   const [testedOk, setTestedOk] = useState<Record<string, boolean>>({});
@@ -34,10 +49,8 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
         <section className="rounded-panel border border-[#E5E7EB] bg-white p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="text-[15px] font-semibold text-[#0F172A]">AI 大模型接口</h2>
-              <p className="mt-0.5 text-[12px] text-[#64748B]">
-                兼容 Ollama、LM Studio、vLLM 及标准 OpenAI API 协议，供 AI 助手调度工具
-              </p>
+              <h2 className="text-[15px] font-semibold text-[#0F172A]">{t.settings.llmTitle}</h2>
+              <p className="mt-0.5 text-[12px] text-[#64748B]">{t.settings.llmDesc}</p>
             </div>
             <div className="inline-flex items-center gap-1 rounded-control bg-[#F3F4F6] p-1">
               <button
@@ -49,7 +62,7 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
                     : 'text-[#64748B] hover:text-[#0F172A]'
                 }`}
               >
-                前端模拟演示
+                {t.settings.modeMock}
               </button>
               <button
                 type="button"
@@ -60,7 +73,7 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
                     : 'text-[#64748B] hover:text-[#0F172A]'
                 }`}
               >
-                本地/自定义端点
+                {t.settings.modeCustom}
               </button>
             </div>
           </div>
@@ -68,7 +81,7 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                Base URL
+                {t.settings.baseUrl}
               </label>
               <input
                 type="text"
@@ -79,7 +92,7 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
             </div>
             <div>
               <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                模型标识 (Model ID)
+                {t.settings.modelId}
               </label>
               <input
                 type="text"
@@ -102,25 +115,23 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
                 <Plug className="h-3.5 w-3.5" />
               )}
               {testingKey === 'llm'
-                ? '检测中…'
+                ? t.settings.testing
                 : testedOk.llm
-                  ? '接口格式校验通过'
-                  : '校验端点格式'}
+                  ? t.settings.testedOk
+                  : t.settings.validateEndpoint}
             </button>
           </div>
         </section>
 
         {/* Cloud T4 Compute Bridge */}
         <section className="rounded-panel border border-[#E5E7EB] bg-white p-5">
-          <h2 className="text-[15px] font-semibold text-[#0F172A]">云端算力与音轨预处理</h2>
-          <p className="mt-0.5 text-[12px] text-[#64748B]">
-            对接你在 Google Colab / Kaggle 上运行的 faster-whisper T4 服务隧道地址
-          </p>
+          <h2 className="text-[15px] font-semibold text-[#0F172A]">{t.settings.cloudTitle}</h2>
+          <p className="mt-0.5 text-[12px] text-[#64748B]">{t.settings.cloudDesc}</p>
 
           <div className="mt-4 space-y-3.5">
             <div>
               <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                Google Colab T4 Bridge URL
+                {t.settings.colabUrl}
               </label>
               <input
                 type="text"
@@ -131,7 +142,7 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
             </div>
             <div>
               <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                Kaggle T4 x2 Bridge URL
+                {t.settings.kaggleUrl}
               </label>
               <input
                 type="text"
@@ -140,31 +151,91 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
                 className="h-9 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[13px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
               />
             </div>
-            <label className="flex items-center gap-2.5 pt-1 text-[13px] text-[#0F172A]">
-              <input
-                type="checkbox"
-                checked={form.ffmpegAutoExtract}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, ffmpegAutoExtract: e.target.checked }))
-                }
-                className="h-4 w-4 rounded-inner border-[#CBD5E1] accent-[#2563EB]"
-              />
-              <span>拖入视频时自动调用本地 FFmpeg 提取 16kHz 音频后再上传云端</span>
-            </label>
+            <div className="grid grid-cols-1 gap-4 pt-1 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
+                  {t.settings.colabGpuSpec}
+                </label>
+                <div className="inline-flex h-9 items-center gap-1 rounded-control bg-[#F3F4F6] p-1">
+                  {(['T4', 'L4', 'A100'] as ColabGpuSpec[]).map((gpu) => (
+                    <button
+                      key={gpu}
+                      type="button"
+                      onClick={() => setForm((prev) => ({ ...prev, colabGpuSpec: gpu }))}
+                      className={`rounded-inner px-3 py-1 font-mono text-[12px] font-medium transition-colors ${
+                        form.colabGpuSpec === gpu
+                          ? 'bg-white text-[#0F172A] shadow-xs'
+                          : 'text-[#64748B] hover:text-[#0F172A]'
+                      }`}
+                    >
+                      {gpu}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
+                  {t.settings.autoShutdownMinutes}
+                </label>
+                <div className="inline-flex h-9 items-center gap-1 rounded-control bg-[#F3F4F6] p-1">
+                  {([10, 15, 30] as IdleShutdownMinutes[]).map((mins) => (
+                    <button
+                      key={mins}
+                      type="button"
+                      onClick={() => setForm((prev) => ({ ...prev, autoShutdownMinutes: mins }))}
+                      className={`rounded-inner px-3 py-1 font-mono text-[12px] font-medium transition-colors tabular-nums ${
+                        form.autoShutdownMinutes === mins
+                          ? 'bg-white text-[#0F172A] shadow-xs'
+                          : 'text-[#64748B] hover:text-[#0F172A]'
+                      }`}
+                    >
+                      {t.transcribe.compute.minutesUnit(mins)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-1 text-[13px] text-[#0F172A]">
+              <label className="flex items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={form.autoShutdownEnabled}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, autoShutdownEnabled: e.target.checked }))
+                  }
+                  className="h-4 w-4 rounded-inner border-[#CBD5E1] accent-[#2563EB]"
+                />
+                <span>{t.settings.autoShutdownTitle}</span>
+              </label>
+
+              <label className="flex items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={form.ffmpegAutoExtract}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, ffmpegAutoExtract: e.target.checked }))
+                  }
+                  className="h-4 w-4 rounded-inner border-[#CBD5E1] accent-[#2563EB]"
+                />
+                <span>{t.settings.ffmpegExtract}</span>
+              </label>
+            </div>
           </div>
         </section>
 
         {/* Downloader, Chrome Bridge & Converter Endpoints */}
         <section className="rounded-panel border border-[#E5E7EB] bg-white p-5">
-          <h2 className="text-[15px] font-semibold text-[#0F172A]">本地下载内核与 Chrome 插件桥接</h2>
-          <p className="mt-0.5 text-[12px] text-[#64748B]">
-            配置 HTTP Range 多线程分片引擎、yt-dlp 流媒体内核、本地 Chrome 插件桥接服务（tiny_http / HTTP）及文档转换接口
-          </p>
+          <h2 className="text-[15px] font-semibold text-[#0F172A]">
+            {t.settings.downloaderTitle}
+          </h2>
+          <p className="mt-0.5 text-[12px] text-[#64748B]">{t.settings.downloaderDesc}</p>
 
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                高速下载引擎 HTTP 接口
+                {t.settings.downloaderRpc}
               </label>
               <input
                 type="text"
@@ -178,7 +249,7 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
 
             <div>
               <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                默认 Range 分片线程数
+                {t.settings.defaultThreads}
               </label>
               <div className="inline-flex h-9 items-center gap-1 rounded-control bg-[#F3F4F6] p-1">
                 {([8, 16, 32, 64] as ThreadCount[]).map((count) => (
@@ -200,7 +271,7 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
 
             <div>
               <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                默认下载保存目录
+                {t.settings.defaultSaveDir}
               </label>
               <input
                 type="text"
@@ -214,7 +285,7 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
 
             <div>
               <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                Chrome 插件本地桥接端口
+                {t.settings.bridgePort}
               </label>
               <input
                 type="number"
@@ -233,7 +304,7 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
 
             <div>
               <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                Chrome 插件桥接 Token
+                {t.settings.bridgeToken}
               </label>
               <input
                 type="text"
@@ -247,7 +318,7 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
 
             <div>
               <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                yt-dlp 可执行路径（流媒体解析内核）
+                {t.settings.ytdlpPath}
               </label>
               <input
                 type="text"
@@ -259,7 +330,7 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
 
             <div>
               <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                文档转换服务地址 (LibreOffice / Pandoc)
+                {t.settings.converterUrl}
               </label>
               <input
                 type="text"
@@ -281,7 +352,7 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
                   }
                   className="h-4 w-4 rounded-inner border-[#CBD5E1] accent-[#2563EB]"
                 />
-                <span>开启 Chrome 插件本地 HTTP 监听</span>
+                <span>{t.settings.enableBridge}</span>
               </label>
               <label className="flex items-center gap-2">
                 <input
@@ -292,7 +363,7 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
                   }
                   className="h-4 w-4 rounded-inner border-[#CBD5E1] accent-[#2563EB]"
                 />
-                <span>捕获后立即开始下载</span>
+                <span>{t.settings.autoStartCapture}</span>
               </label>
               <label className="flex items-center gap-2">
                 <input
@@ -303,9 +374,65 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
                   }
                   className="h-4 w-4 rounded-inner border-[#CBD5E1] accent-[#2563EB]"
                 />
-                <span>剪贴板链接自动嗅探</span>
+                <span>{t.settings.clipboardSniff}</span>
               </label>
             </div>
+          </div>
+        </section>
+
+        {/* GitHub Update Source */}
+        <section className="rounded-panel border border-[#E5E7EB] bg-white p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-[15px] font-semibold text-[#0F172A]">{t.settings.githubTitle}</h2>
+              <p className="mt-0.5 text-[12px] text-[#64748B]">{t.settings.githubDesc}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenUpdateModal}
+              className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#0F172A] hover:border-[#2563EB] hover:text-[#2563EB] whitespace-nowrap"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              {t.settings.openUpdateBtn}
+            </button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
+                {t.settings.githubRepo}
+              </label>
+              <input
+                type="text"
+                value={form.githubRepo}
+                onChange={(e) => setForm((prev) => ({ ...prev, githubRepo: e.target.value }))}
+                placeholder="joelting02-sys/JoelDeskPro"
+                className="h-9 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[13px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
+                {t.settings.githubBranch}
+              </label>
+              <input
+                type="text"
+                value={form.githubBranch}
+                onChange={(e) => setForm((prev) => ({ ...prev, githubBranch: e.target.value }))}
+                placeholder="main"
+                className="h-9 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[13px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
+              />
+            </div>
+            <label className="flex items-center gap-2.5 pt-1 text-[13px] text-[#0F172A] sm:col-span-2">
+              <input
+                type="checkbox"
+                checked={form.autoCheckUpdate}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, autoCheckUpdate: e.target.checked }))
+                }
+                className="h-4 w-4 rounded-inner border-[#CBD5E1] accent-[#2563EB]"
+              />
+              <span>{t.settings.autoCheckStartup}</span>
+            </label>
           </div>
         </section>
 
@@ -317,10 +444,10 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
             className="flex w-full items-center justify-between px-5 py-3.5 text-left"
           >
             <div>
-              <div className="text-[14px] font-semibold text-[#0F172A]">后端对接 JSON 协议参考</div>
-              <div className="text-[12px] text-[#64748B]">
-                查看前端预留的 5 个标准请求结构（含双内核下载与 Chrome 插件本地桥接）
+              <div className="text-[14px] font-semibold text-[#0F172A]">
+                {t.settings.protocolTitle}
               </div>
+              <div className="text-[12px] text-[#64748B]">{t.settings.protocolDesc}</div>
             </div>
             {showProtocols ? (
               <ChevronUp className="h-4 w-4 text-[#64748B]" />
@@ -333,14 +460,17 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
             <div className="grid grid-cols-1 gap-4 border-t border-[#E5E7EB] p-5 md:grid-cols-2">
               {(
                 [
-                  { key: 'llm', title: '大模型意图路由 (OpenAI 兼容)' },
-                  { key: 'transcribe', title: '云端 T4 语音转录' },
-                  { key: 'download', title: '双内核下载指令 (Range / yt-dlp)' },
-                  { key: 'chromeBridge', title: 'Chrome 插件本地桥接 (tiny_http)' },
-                  { key: 'convert', title: '文档格式转换' },
+                  { key: 'llm', title: t.settings.protocols.llm },
+                  { key: 'transcribe', title: t.settings.protocols.transcribe },
+                  { key: 'download', title: t.settings.protocols.download },
+                  { key: 'chromeBridge', title: t.settings.protocols.chromeBridge },
+                  { key: 'convert', title: t.settings.protocols.convert },
                 ] as const
               ).map((item) => (
-                <div key={item.key} className="rounded-control border border-[#E5E7EB] bg-[#F8F9FA] p-3.5">
+                <div
+                  key={item.key}
+                  className="rounded-control border border-[#E5E7EB] bg-[#F8F9FA] p-3.5"
+                >
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-[12px] font-semibold text-[#0F172A]">{item.title}</span>
                     <button
@@ -349,7 +479,7 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
                       className="inline-flex items-center gap-1 text-[11px] text-[#2563EB] hover:text-[#1D4ED8]"
                     >
                       <Copy className="h-3 w-3" />
-                      复制
+                      {t.settings.copy}
                     </button>
                   </div>
                   <pre className="overflow-x-auto font-mono text-[11px] leading-relaxed text-[#334155]">
@@ -369,7 +499,7 @@ export function SettingsView({ config, onSaveConfig, onCopyText }: SettingsViewP
             className="inline-flex items-center gap-2 rounded-control bg-[#2563EB] px-4 py-2 text-[13px] font-medium text-white hover:bg-[#1D4ED8] transition-colors whitespace-nowrap"
           >
             <Save className="h-4 w-4" />
-            保存接口配置
+            {t.settings.saveConfig}
           </button>
         </div>
       </div>

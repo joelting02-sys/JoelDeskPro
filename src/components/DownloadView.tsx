@@ -38,8 +38,10 @@ import {
   triggerClientFileDownload,
 } from '../services/toolkitAdapter';
 import { DirectoryHandleLike } from '../services/webRangeDownloader';
+import { AppLanguage, TRANSLATIONS } from '../i18n';
 
 interface DownloadViewProps {
+  lang: AppLanguage;
   tasks: DownloadTask[];
   config: EndpointConfig;
   chromeConnected: boolean;
@@ -70,17 +72,8 @@ interface DownloadViewProps {
 
 type DownloadFilter = 'all' | 'active' | 'completed';
 
-const PRESET_SAVE_DIRS = [
-  { label: '默认下载目录', path: 'C:\\Users\\Downloads\\JoelDeskPro' },
-  { label: '桌面视频文件夹', path: 'C:\\Users\\Desktop\\Videos' },
-  { label: 'D 盘媒体素材库', path: 'D:\\Media\\Downloads' },
-  { label: 'macOS 下载目录', path: '~/Downloads/JoelDeskPro' },
-];
-
-const DEMO_MESSY_LINK =
-  '【内部资源分享】2026最新大模型部署包，高速直链：https://mirror.example.com/releases/faster_whisper_bundle_v3.zip 复制整段即可下载';
-
 export function DownloadView({
+  lang,
   tasks,
   config,
   chromeConnected,
@@ -96,6 +89,7 @@ export function DownloadView({
   onDeleteTask,
   onCopyText,
 }: DownloadViewProps) {
+  const t = TRANSLATIONS[lang];
   const [rawInput, setRawInput] = useState('');
   const [threads, setThreads] = useState<ThreadCount>(config.defaultThreads);
   const [filter, setFilter] = useState<DownloadFilter>('all');
@@ -106,6 +100,16 @@ export function DownloadView({
 
   const folderPopoverRef = useRef<HTMLDivElement>(null);
   const convertMenuRef = useRef<HTMLDivElement>(null);
+
+  const presetSaveDirs = useMemo(
+    () => [
+      { label: t.download.presetDirs.defaultDownloads, path: 'C:\\Users\\Downloads\\JoelDeskPro' },
+      { label: t.download.presetDirs.desktopVideos, path: 'C:\\Users\\Desktop\\Videos' },
+      { label: t.download.presetDirs.mediaLibrary, path: 'D:\\Media\\Downloads' },
+      { label: t.download.presetDirs.macDownloads, path: '~/Downloads/JoelDeskPro' },
+    ],
+    [t]
+  );
 
   useEffect(() => {
     setCustomDirDraft(config.defaultSaveDir);
@@ -146,16 +150,16 @@ export function DownloadView({
   );
 
   const filteredTasks = useMemo(() => {
-    if (filter === 'active') return tasks.filter((t) => t.status !== 'completed');
-    if (filter === 'completed') return tasks.filter((t) => t.status === 'completed');
+    if (filter === 'active') return tasks.filter((item) => item.status !== 'completed');
+    if (filter === 'completed') return tasks.filter((item) => item.status === 'completed');
     return tasks;
   }, [tasks, filter]);
 
   const totalSpeed = useMemo(
     () =>
       tasks
-        .filter((t) => t.status === 'downloading')
-        .reduce((acc, t) => acc + t.speedMBps, 0),
+        .filter((item) => item.status === 'downloading')
+        .reduce((acc, item) => acc + item.speedMBps, 0),
     [tasks]
   );
 
@@ -229,7 +233,7 @@ export function DownloadView({
                   type="text"
                   value={rawInput}
                   onChange={(e) => setRawInput(e.target.value)}
-                  placeholder="粘贴直链、抖音 / YouTube 链接或带杂字的分享文案，自动选最快方式分片下载…"
+                  placeholder={t.download.inputPlaceholder}
                   className="h-10 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] pl-10 pr-3 text-[14px] text-[#0F172A] placeholder:text-[#94A3B8] focus:border-[#2563EB] focus:bg-white focus:outline-none transition-colors"
                 />
               </div>
@@ -247,7 +251,7 @@ export function DownloadView({
                           : 'text-[#64748B] hover:text-[#0F172A]'
                       }`}
                     >
-                      {count} 线程
+                      {t.download.threadsUnit(count)}
                     </button>
                   ))}
                 </div>
@@ -258,7 +262,7 @@ export function DownloadView({
                   className="inline-flex h-10 items-center gap-2 rounded-control bg-[#2563EB] px-4 text-[13px] font-medium text-white transition-colors hover:bg-[#1D4ED8] disabled:bg-[#CBD5E1] disabled:cursor-not-allowed whitespace-nowrap"
                 >
                   <Download className="h-4 w-4" />
-                  开始下载
+                  {t.download.startDownload}
                 </button>
               </div>
             </div>
@@ -270,7 +274,7 @@ export function DownloadView({
                   <>
                     <div className="flex min-w-0 items-center gap-2">
                       <span className="shrink-0 font-medium text-[#16A34A]">
-                        {extracted.hadNoise ? '已自动过滤杂字' : '有效链接'}
+                        {extracted.hadNoise ? t.download.filteredNoise : t.download.validLink}
                       </span>
                       <span aria-hidden="true" className="text-[#CBD5E1]">·</span>
                       <span className="truncate font-mono text-[#0F172A]">{extracted.cleanUrl}</span>
@@ -278,9 +282,7 @@ export function DownloadView({
                     <span className="shrink-0 font-mono text-[#64748B]">{extracted.fileName}</span>
                   </>
                 ) : (
-                  <span className="text-[#D97706]">
-                    未检测到以 http:// 或 https:// 开头的有效下载链接
-                  </span>
+                  <span className="text-[#D97706]">{t.download.invalidLink}</span>
                 )}
               </div>
             )}
@@ -289,12 +291,12 @@ export function DownloadView({
             <div className="mt-3.5 flex flex-wrap items-center justify-between gap-3 border-t border-[#F1F5F9] pt-3">
               <div className="relative flex min-w-0 flex-1 items-center gap-2" ref={folderPopoverRef}>
                 <Folder className="h-4 w-4 shrink-0 text-[#64748B]" />
-                <span className="shrink-0 text-[12px] text-[#64748B]">保存到</span>
+                <span className="shrink-0 text-[12px] text-[#64748B]">{t.download.saveTo}</span>
                 <button
                   type="button"
                   onClick={() => setFolderPickerOpen((prev) => !prev)}
                   className="flex min-w-0 max-w-[380px] items-center gap-1.5 rounded-inner bg-[#F8F9FA] px-2.5 py-1 font-mono text-[12px] text-[#0F172A] hover:bg-[#F1F5F9] transition-colors"
-                  title="点击切换本地保存目录"
+                  title={t.download.switchDirTitle}
                 >
                   <span className="truncate">{config.defaultSaveDir}</span>
                   <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#64748B]" />
@@ -306,18 +308,18 @@ export function DownloadView({
                   className="inline-flex shrink-0 items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1 text-[12px] font-medium text-[#0F172A] hover:bg-[#F8F9FA] whitespace-nowrap"
                 >
                   <FolderOpen className="h-3.5 w-3.5 text-[#2563EB]" />
-                  {hasRealDirHandle ? '已授权直写文件夹' : '选择文件夹'}
+                  {hasRealDirHandle ? t.download.dirAuthorizedBtn : t.download.chooseFolderBtn}
                 </button>
 
                 {/* Folder Picker Popover */}
                 {folderPickerOpen && (
                   <div className="absolute left-0 top-full z-30 mt-2 w-[360px] max-w-[calc(100vw-3rem)] rounded-panel border border-[#E5E7EB] bg-white p-3.5 shadow-lg">
                     <div className="mb-2 text-[12px] font-semibold text-[#0F172A]">
-                      选择本地保存文件夹
+                      {t.download.chooseLocalFolderTitle}
                     </div>
 
                     <div className="space-y-1">
-                      {PRESET_SAVE_DIRS.map((item) => {
+                      {presetSaveDirs.map((item) => {
                         const isSelected = config.defaultSaveDir === item.path;
                         return (
                           <button
@@ -347,7 +349,7 @@ export function DownloadView({
 
                     <div className="mt-3 border-t border-[#E5E7EB] pt-3">
                       <label className="mb-1.5 block text-[11px] font-medium text-[#64748B]">
-                        自定义本机路径
+                        {t.download.customPathLabel}
                       </label>
                       <div className="flex items-center gap-2">
                         <input
@@ -363,7 +365,7 @@ export function DownloadView({
                               }
                             }
                           }}
-                          placeholder="例如 D:\Videos\Downloads"
+                          placeholder={t.download.customPathPlaceholder}
                           className="h-8 flex-1 rounded-inner border border-[#E5E7EB] bg-[#F8F9FA] px-2.5 font-mono text-[12px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
                         />
                         <button
@@ -376,23 +378,13 @@ export function DownloadView({
                           }}
                           className="h-8 rounded-inner bg-[#2563EB] px-3 text-[12px] font-medium text-white hover:bg-[#1D4ED8] whitespace-nowrap"
                         >
-                          确定
+                          {t.download.confirm}
                         </button>
                       </div>
                     </div>
                   </div>
                 )}
               </div>
-
-              {!rawInput && (
-                <button
-                  type="button"
-                  onClick={() => setRawInput(DEMO_MESSY_LINK)}
-                  className="text-[12px] font-medium text-[#2563EB] hover:text-[#1D4ED8] whitespace-nowrap"
-                >
-                  填入示例链接
-                </button>
-              )}
             </div>
           </form>
         </section>
@@ -406,7 +398,7 @@ export function DownloadView({
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[14px] font-semibold text-[#0F172A]">
-                  JoelDeskPro 插件
+                  {t.download.pluginTitle}
                 </span>
                 <span aria-hidden="true" className="text-[#CBD5E1]">·</span>
                 <span
@@ -415,17 +407,15 @@ export function DownloadView({
                   }`}
                 >
                   {chromeConnected && localEngineOnline
-                    ? '已连接（网页端 + 本地引擎）'
+                    ? t.download.statusDual
                     : chromeConnected
-                      ? '已直连当前网页端'
+                      ? t.download.statusWeb
                       : localEngineOnline
-                        ? '本地高速引擎在线'
-                        : '网页端可直用 · 安装插件解锁全站嗅探'}
+                        ? t.download.statusLocal
+                        : t.download.statusReady}
                 </span>
               </div>
-              <p className="mt-0.5 text-[12px] text-[#64748B]">
-                支持网页端与本地客户端双通道，刷 YouTube、抖音、B 站时在视频右上角一键下载
-              </p>
+              <p className="mt-0.5 text-[12px] text-[#64748B]">{t.download.pluginDesc}</p>
             </div>
           </div>
 
@@ -442,11 +432,11 @@ export function DownloadView({
               {chromeConnected ? (
                 <>
                   <Check className="h-3.5 w-3.5 text-[#4ADE80]" />
-                  <span>打开插件设置</span>
+                  <span>{t.download.openPluginSettings}</span>
                 </>
               ) : (
                 <>
-                  <span>配置 JoelDeskPro 插件</span>
+                  <span>{t.download.configurePlugin}</span>
                   <ArrowUpRight className="h-3.5 w-3.5" />
                 </>
               )}
@@ -460,14 +450,18 @@ export function DownloadView({
             <div className="inline-flex items-center gap-1 rounded-control bg-[#F3F4F6] p-1">
               {(
                 [
-                  { id: 'all', label: `全部 (${tasks.length})` },
+                  { id: 'all', label: t.download.filterAll(tasks.length) },
                   {
                     id: 'active',
-                    label: `下载中 (${tasks.filter((t) => t.status !== 'completed').length})`,
+                    label: t.download.filterActive(
+                      tasks.filter((item) => item.status !== 'completed').length
+                    ),
                   },
                   {
                     id: 'completed',
-                    label: `已完成 (${tasks.filter((t) => t.status === 'completed').length})`,
+                    label: t.download.filterCompleted(
+                      tasks.filter((item) => item.status === 'completed').length
+                    ),
                   },
                 ] as const
               ).map((tab) => (
@@ -488,7 +482,7 @@ export function DownloadView({
 
             {totalSpeed > 0 && (
               <div className="font-mono text-[12px] text-[#475569] tabular-nums">
-                总速率{' '}
+                {t.download.totalSpeed}{' '}
                 <span className="font-semibold text-[#0F172A]">{totalSpeed.toFixed(1)} MB/s</span>
               </div>
             )}
@@ -496,7 +490,7 @@ export function DownloadView({
 
           {filteredTasks.length === 0 ? (
             <div className="px-5 py-14 text-center text-[13px] text-[#64748B]">
-              当前分类下暂无下载任务
+              {t.download.emptyList}
             </div>
           ) : (
             <div className="divide-y divide-[#E5E7EB]">
@@ -507,7 +501,7 @@ export function DownloadView({
                 const fileCategory = detectFileCategory(task.fileName);
                 const canTranscribe =
                   isCompleted && (fileCategory === 'video' || fileCategory === 'audio');
-                const formatGroups = isCompleted ? getFormatMenuGroups(task.fileName) : [];
+                const formatGroups = isCompleted ? getFormatMenuGroups(task.fileName, lang) : [];
                 const isConvertMenuOpen = convertMenuTaskId === task.id;
 
                 return (
@@ -523,22 +517,22 @@ export function DownloadView({
                           </span>
                           {task.source === 'chrome_extension' && (
                             <span className="text-[12px] font-medium text-[#2563EB]">
-                              来自 Chrome 插件
+                              {t.download.fromExtension}
                             </span>
                           )}
                           {task.hasCookies && (
                             <span className="inline-flex items-center gap-1 text-[12px] text-[#64748B]">
                               <ShieldCheck className="h-3.5 w-3.5 text-[#16A34A]" />
-                              已同步登录态
+                              {t.download.cookiesSynced}
                             </span>
                           )}
                         </div>
 
                         <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-mono text-[12px] text-[#64748B] tabular-nums">
                           <span>
-                            {task.threads} 线程 · {Math.max(1, task.chunks.length)} 分片并发
+                            {t.download.chunksMeta(task.threads, Math.max(1, task.chunks.length))}
                             {task.engine === 'ytdlp'
-                              ? ` · ${mediaQualityLabel(task.mediaQuality ?? 'best')}`
+                              ? ` · ${mediaQualityLabel(task.mediaQuality ?? 'best', lang)}`
                               : ''}
                           </span>
                           <span aria-hidden="true">·</span>
@@ -554,10 +548,12 @@ export function DownloadView({
                           {isCompleted ? (
                             <span className="inline-flex items-center gap-1 font-sans font-medium text-[#16A34A]">
                               <Check className="h-3.5 w-3.5" />
-                              {task.savedLocationLabel || '已保存到本地'}
+                              {task.savedLocationLabel || t.download.savedLocally}
                             </span>
                           ) : isPaused ? (
-                            <span className="font-sans font-medium text-[#D97706]">已暂停</span>
+                            <span className="font-sans font-medium text-[#D97706]">
+                              {t.download.paused}
+                            </span>
                           ) : (
                             <span className="font-medium text-[#2563EB]">
                               {task.speedMBps.toFixed(1)} MB/s
@@ -575,7 +571,7 @@ export function DownloadView({
                             className="inline-flex h-8 items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 text-[12px] font-medium text-[#0F172A] hover:border-[#2563EB] hover:text-[#2563EB] whitespace-nowrap transition-colors"
                           >
                             <AudioWaveform className="h-3.5 w-3.5" />
-                            送去转录
+                            {t.download.sendToTranscribe}
                           </button>
                         )}
 
@@ -596,14 +592,14 @@ export function DownloadView({
                               }`}
                             >
                               <FileOutput className="h-3.5 w-3.5" />
-                              <span>转换格式</span>
+                              <span>{t.download.convertFormat}</span>
                               <ChevronDown className="h-3 w-3 opacity-70" />
                             </button>
 
                             {isConvertMenuOpen && (
                               <div className="absolute right-0 top-full z-40 mt-2 w-[300px] rounded-panel border border-[#E5E7EB] bg-white p-3 shadow-xl">
                                 <div className="mb-2 px-1 text-[12px] font-semibold text-[#0F172A]">
-                                  选择目标格式
+                                  {t.download.selectTargetFormat}
                                 </div>
                                 <div className="space-y-3">
                                   {formatGroups.map((group) => (
@@ -643,8 +639,8 @@ export function DownloadView({
                           <button
                             type="button"
                             onClick={() => onTogglePause(task.id)}
-                            aria-label={isPaused ? '继续下载' : '暂停下载'}
-                            title={isPaused ? '继续下载' : '暂停下载'}
+                            aria-label={isPaused ? t.download.resumeDownload : t.download.pauseDownload}
+                            title={isPaused ? t.download.resumeDownload : t.download.pauseDownload}
                             className="flex h-8 w-8 items-center justify-center rounded-control border border-[#E5E7EB] bg-white text-[#475569] hover:border-[#CBD5E1] hover:text-[#0F172A]"
                           >
                             {isPaused ? (
@@ -656,9 +652,9 @@ export function DownloadView({
                         )}
                         <button
                           type="button"
-                          onClick={() => onCopyText(task.cleanUrl, '纯下载链接')}
-                          aria-label="复制纯链接"
-                          title="复制纯净下载链接"
+                          onClick={() => onCopyText(task.cleanUrl, t.toasts.cleanUrlLabel)}
+                          aria-label={t.download.copyCleanUrl}
+                          title={t.download.copyCleanUrl}
                           className="flex h-8 w-8 items-center justify-center rounded-control border border-[#E5E7EB] bg-white text-[#475569] hover:border-[#CBD5E1] hover:text-[#0F172A]"
                         >
                           <Copy className="h-3.5 w-3.5" />
@@ -666,8 +662,8 @@ export function DownloadView({
                         <button
                           type="button"
                           onClick={() => onDeleteTask(task.id)}
-                          aria-label="删除任务"
-                          title="移除任务"
+                          aria-label={t.download.deleteTask}
+                          title={t.download.deleteTask}
                           className="flex h-8 w-8 items-center justify-center rounded-control border border-[#E5E7EB] bg-white text-[#94A3B8] hover:border-[#FECACA] hover:text-[#DC2626]"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -683,7 +679,7 @@ export function DownloadView({
                           style={{
                             gridTemplateColumns: `repeat(${task.chunks.length}, minmax(0, 1fr))`,
                           }}
-                          title={`${task.chunks.length} 个分片并发下载进度`}
+                          title={t.download.chunksProgressTitle(task.chunks.length)}
                         >
                           {task.chunks.map((chunkPct, idx) => (
                             <div
@@ -729,7 +725,7 @@ export function DownloadView({
         </section>
       </div>
 
-      {/* Clean JoelDeskPro Plugin Settings Modal (No mock previews) */}
+      {/* Clean JoelDeskPro Plugin Settings Modal */}
       {pluginModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-[2px]"
@@ -743,16 +739,16 @@ export function DownloadView({
             <div className="flex items-center justify-between border-b border-[#E5E7EB] px-5 py-4">
               <div>
                 <h2 className="text-[15px] font-semibold text-[#0F172A]">
-                  JoelDeskPro 插件设置
+                  {t.download.pluginModal.title}
                 </h2>
                 <p className="mt-0.5 text-[12px] text-[#64748B]">
-                  支持网页端直接用与本地客户端双通道 · 默认保存至 {config.defaultSaveDir}
+                  {t.download.pluginModal.subtitle(config.defaultSaveDir)}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setPluginModalOpen(false)}
-                aria-label="关闭窗口"
+                aria-label={t.download.pluginModal.close}
                 className="flex h-8 w-8 items-center justify-center rounded-control text-[#64748B] hover:bg-[#F3F4F6] hover:text-[#0F172A]"
               >
                 <X className="h-4 w-4" />
@@ -764,29 +760,37 @@ export function DownloadView({
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 <div className="rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-4 py-3">
                   <div className="flex items-center justify-between text-[12px]">
-                    <span className="font-medium text-[#0F172A]">网页端通道</span>
+                    <span className="font-medium text-[#0F172A]">
+                      {t.download.pluginModal.webChannel}
+                    </span>
                     <span
                       className={`font-medium ${
                         chromeConnected ? 'text-[#16A34A]' : 'text-[#64748B]'
                       }`}
                     >
-                      {chromeConnected ? '已直连' : '等待安装'}
+                      {chromeConnected
+                        ? t.download.pluginModal.webConnected
+                        : t.download.pluginModal.webWaiting}
                     </span>
                   </div>
                   <div className="mt-1 truncate font-mono text-[11px] text-[#64748B]">
-                    发布后免装客户端，自动注册当前网址
+                    {t.download.pluginModal.webNote}
                   </div>
                 </div>
 
                 <div className="rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-4 py-3">
                   <div className="flex items-center justify-between text-[12px]">
-                    <span className="font-medium text-[#0F172A]">本地引擎通道</span>
+                    <span className="font-medium text-[#0F172A]">
+                      {t.download.pluginModal.localChannel}
+                    </span>
                     <span
                       className={`font-medium ${
                         localEngineOnline ? 'text-[#16A34A]' : 'text-[#64748B]'
                       }`}
                     >
-                      {localEngineOnline ? '在线' : '可选未启动'}
+                      {localEngineOnline
+                        ? t.download.pluginModal.localOnline
+                        : t.download.pluginModal.localOptional}
                     </span>
                   </div>
                   <div className="mt-1 truncate font-mono text-[11px] text-[#64748B]">
@@ -804,24 +808,24 @@ export function DownloadView({
                     className="inline-flex items-center gap-1.5 rounded-control bg-[#2563EB] px-3.5 py-2 text-[12px] font-medium text-white hover:bg-[#1D4ED8] whitespace-nowrap"
                   >
                     <Download className="h-3.5 w-3.5" />
-                    下载 JoelDeskPro 插件 (.zip)
+                    {t.download.pluginModal.downloadExtZip}
                   </button>
                   <button
                     type="button"
                     onClick={handleExportLocalEngine}
                     className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-2 text-[12px] font-medium text-[#0F172A] hover:border-[#2563EB] hover:text-[#2563EB] whitespace-nowrap"
-                    title="可选：本机运行 node joeldeskpro-local-engine.mjs 解锁无限硬盘直写与 yt-dlp"
+                    title={t.download.pluginModal.localEngineTooltip}
                   >
                     <Download className="h-3.5 w-3.5" />
-                    本地引擎 (.mjs · 可选)
+                    {t.download.pluginModal.downloadLocalEngine}
                   </button>
                   <button
                     type="button"
-                    onClick={() => onCopyText('chrome://extensions', 'Chrome 扩展管理地址')}
+                    onClick={() => onCopyText('chrome://extensions', t.toasts.chromeExtUrlLabel)}
                     className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-2 text-[12px] font-medium text-[#475569] hover:text-[#0F172A] whitespace-nowrap"
                   >
                     <ExternalLink className="h-3.5 w-3.5" />
-                    复制 chrome://extensions
+                    {t.download.pluginModal.copyExtensionsUrl}
                   </button>
                   <button
                     type="button"
@@ -831,10 +835,10 @@ export function DownloadView({
                     {chromeConnected ? (
                       <>
                         <Check className="h-3.5 w-3.5 text-[#16A34A]" />
-                        重新握手
+                        {t.download.pluginModal.rehandshake}
                       </>
                     ) : (
-                      <span>检测连接</span>
+                      <span>{t.download.pluginModal.testConnection}</span>
                     )}
                   </button>
                 </div>
@@ -843,15 +847,24 @@ export function DownloadView({
                 <div className="grid grid-cols-1 gap-2 border-t border-[#E5E7EB] pt-3 text-[12px] text-[#475569] sm:grid-cols-3">
                   <div>
                     <span className="font-mono font-semibold text-[#0F172A]">1. </span>
-                    解压 <span className="font-mono text-[#0F172A]">.zip</span>（首层即含 manifest.json）
+                    {t.download.pluginModal.step1Prefix}
+                    <span className="font-mono text-[#0F172A]">.zip</span>
+                    {t.download.pluginModal.step1Suffix}
                   </div>
                   <div>
                     <span className="font-mono font-semibold text-[#0F172A]">2. </span>
-                    扩展页右上角开 <span className="font-medium text-[#0F172A]">开发者模式</span>
+                    {t.download.pluginModal.step2Prefix}
+                    <span className="font-medium text-[#0F172A]">
+                      {t.download.pluginModal.step2Bold}
+                    </span>
                   </div>
                   <div>
                     <span className="font-mono font-semibold text-[#0F172A]">3. </span>
-                    点 <span className="font-medium text-[#0F172A]">加载已解压扩展</span> 选中文件夹
+                    {t.download.pluginModal.step3Prefix}
+                    <span className="font-medium text-[#0F172A]">
+                      {t.download.pluginModal.step3Bold}
+                    </span>
+                    {t.download.pluginModal.step3Suffix}
                   </div>
                 </div>
               </div>
