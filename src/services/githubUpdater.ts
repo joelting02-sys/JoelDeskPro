@@ -1,7 +1,7 @@
 // GitHub real-time update checker & local client updater for joelting02-sys/JoelDeskPro
 import { AppLanguage } from '../i18n';
 
-export const APP_VERSION = '1.2.0';
+export const APP_VERSION = '1.3.0';
 export const DEFAULT_GITHUB_REPO = 'joelting02-sys/JoelDeskPro';
 export const DEFAULT_GITHUB_BRANCH = 'main';
 

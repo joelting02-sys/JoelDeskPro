@@ -13,10 +13,9 @@ files:
   - '!node_modules/**/*'
 npmRebuild: false
 asar: true
-protocols:
-  - name: Joel Desk Pro Protocol
-    schemes:
-      - joeldeskpro
+asarUnpack:
+  - electron/tdm-host.cs
+  - electron/tdm-host.ps1
 win:
   target:
     - target: nsis

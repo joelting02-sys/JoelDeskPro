@@ -19,7 +19,6 @@ import {
   AttachedFileItem,
   ComputeProvider,
   DocumentFormat,
-  ThreadCount,
   WhisperPresetId,
   WorkspaceView,
 } from '../types/toolkit';
@@ -352,14 +351,15 @@ function AgentActionCard({
   const presetsMeta = getWhisperPresets(lang);
 
   if (action.type === 'download') {
-    const threadOptions: ThreadCount[] = [8, 16, 32, 64];
-
     return (
       <div className="rounded-panel border border-[#E5E7EB] bg-white p-4">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-[13px] font-semibold text-[#0F172A]">
             <Download className="h-4 w-4 text-[#2563EB]" />
             <span>{t.agent.downloadDispatch}</span>
+            <span className="rounded-inner bg-[#EFF6FF] px-2 py-0.5 font-mono text-[11px] font-medium text-[#2563EB]">
+              TDM Fast
+            </span>
           </div>
           <span className="font-mono text-[12px] text-[#64748B] truncate max-w-[260px]">
             {action.fileName}
@@ -370,59 +370,35 @@ function AgentActionCard({
           {action.cleanUrl}
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-1 rounded-control bg-[#F3F4F6] p-1">
-            {threadOptions.map((count) => (
-              <button
-                key={count}
-                type="button"
-                disabled={Boolean(action.dispatchedTaskId)}
-                onClick={() =>
-                  onUpdateAction(messageId, (prev) =>
-                    prev.type === 'download' ? { ...prev, threads: count } : prev
-                  )
-                }
-                className={`rounded-inner px-2.5 py-1 font-mono text-[12px] font-medium transition-colors whitespace-nowrap tabular-nums ${
-                  action.threads === count
-                    ? 'bg-white text-[#0F172A] shadow-xs'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
-                }`}
-              >
-                {t.agent.threadsUnit(count)}
-              </button>
-            ))}
-          </div>
+        <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => onCopyText(action.cleanUrl, t.toasts.cleanUrlLabel)}
+            className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:bg-[#F8F9FA] hover:text-[#0F172A] whitespace-nowrap"
+          >
+            <Copy className="h-3.5 w-3.5" />
+            {t.agent.copyUrl}
+          </button>
 
-          <div className="flex items-center gap-2">
+          {action.dispatchedTaskId ? (
             <button
               type="button"
-              onClick={() => onCopyText(action.cleanUrl, t.toasts.cleanUrlLabel)}
-              className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:bg-[#F8F9FA] hover:text-[#0F172A] whitespace-nowrap"
+              onClick={() => onNavigateView('download')}
+              className="inline-flex items-center gap-1.5 rounded-control bg-[#16A34A] px-3.5 py-1.5 text-[12px] font-medium text-white hover:bg-[#15803D] whitespace-nowrap"
             >
-              <Copy className="h-3.5 w-3.5" />
-              {t.agent.copyUrl}
+              <Check className="h-3.5 w-3.5" />
+              {t.agent.addedToDownload}
             </button>
-
-            {action.dispatchedTaskId ? (
-              <button
-                type="button"
-                onClick={() => onNavigateView('download')}
-                className="inline-flex items-center gap-1.5 rounded-control bg-[#16A34A] px-3.5 py-1.5 text-[12px] font-medium text-white hover:bg-[#15803D] whitespace-nowrap"
-              >
-                <Check className="h-3.5 w-3.5" />
-                {t.agent.addedToDownload}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => onDispatchAction(messageId, action)}
-                className="inline-flex items-center gap-1.5 rounded-control bg-[#2563EB] px-3.5 py-1.5 text-[12px] font-medium text-white hover:bg-[#1D4ED8] whitespace-nowrap"
-              >
-                {t.agent.sendToDownload}
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onDispatchAction(messageId, action)}
+              className="inline-flex items-center gap-1.5 rounded-control bg-[#2563EB] px-3.5 py-1.5 text-[12px] font-medium text-white hover:bg-[#1D4ED8] whitespace-nowrap"
+            >
+              {t.agent.sendToDownload}
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
     );

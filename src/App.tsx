@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Menu, Plus, Trash2 } from 'lucide-react';
+import { Check, ExternalLink, Menu, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { AgentView } from './components/AgentView';
 import { TranscribeView } from './components/TranscribeView';
@@ -16,14 +16,9 @@ import {
   ComputeRuntimeState,
   ConversionTask,
   DocumentFormat,
-  DownloadEngine,
-  DownloadSource,
-  DownloadTask,
   EndpointConfig,
   IdleShutdownMinutes,
   MediaKind,
-  MediaQuality,
-  ThreadCount,
   ToastNotice,
   TranscriptLanguage,
   TranscriptOutputFormat,
@@ -35,19 +30,17 @@ import {
 import {
   DEFAULT_ENDPOINT_CONFIG,
   detectDocumentFormat,
-  detectMediaKind,
   generateSimulatedTranscript,
   nowTimeLabel,
   parseAgentIntent,
 } from './services/toolkitAdapter';
 import {
-  deleteLocalEngineTask,
-  dispatchToLocalEngine,
-  getChunkCountForThreads,
-  pickDesktopFolder,
+  INITIAL_TDM_STATUS,
+  TdmBounds,
+  TdmStatus,
+  isDesktopTdmSupported,
   probeLocalEngine,
-  setDesktopSaveDir,
-} from './services/webRangeDownloader';
+} from './services/tdmBridge';
 import {
   GitHubUpdateInfo,
   LocalUpdateResult,
@@ -75,11 +68,15 @@ export default function App() {
   const [config, setConfig] = useState<EndpointConfig>(DEFAULT_ENDPOINT_CONFIG);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [transcriptions, setTranscriptions] = useState<TranscriptionTask[]>([]);
-  const [downloads, setDownloads] = useState<DownloadTask[]>([]);
   const [conversions, setConversions] = useState<ConversionTask[]>([]);
   const [localEngineOnline, setLocalEngineOnline] = useState(false);
   const [localEnginePackaged, setLocalEnginePackaged] = useState(false);
-  const [chromeDefaultDir, setChromeDefaultDir] = useState('');
+  const [tdmStatus, setTdmStatus] = useState<TdmStatus>(() => ({
+    ...INITIAL_TDM_STATUS,
+    supported: isDesktopTdmSupported(),
+  }));
+  const [tdmHiddenByUser, setTdmHiddenByUser] = useState(false);
+
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<GitHubUpdateInfo | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -91,6 +88,9 @@ export default function App() {
 
   const langRef = useRef<AppLanguage>(lang);
   langRef.current = lang;
+  const activeViewRef = useRef<WorkspaceView>(activeView);
+  activeViewRef.current = activeView;
+  const lastDownloadBoundsRef = useRef<TdmBounds | undefined>(undefined);
 
   const t = TRANSLATIONS[lang];
 
@@ -122,10 +122,125 @@ export default function App() {
     [showToast]
   );
 
-  // Live progress loop for active transcriptions, downloads & conversions
+  // Sync native TDM Fast host status & live events
+  useEffect(() => {
+    const tdmApi = window.joelDesktop?.tdm;
+    if (!tdmApi || !isDesktopTdmSupported()) return;
+
+    let mounted = true;
+    tdmApi.getStatus().then((st) => {
+      if (!mounted || !st) return;
+      setTdmStatus(st);
+      if (st.settings) {
+        setConfig((prev) => ({
+          ...prev,
+          tdmExePath: st.settings!.tdm_exe_path ?? prev.tdmExePath,
+          tdmAutoLaunch: st.settings!.tdm_auto_launch ?? prev.tdmAutoLaunch,
+          tdmCloseOnExit: st.settings!.tdm_close_on_exit ?? prev.tdmCloseOnExit,
+          tdmHideOnDrag: st.settings!.tdm_hide_on_drag ?? prev.tdmHideOnDrag,
+          tdmCapturePort: st.settings!.tdm_capture_port ?? prev.tdmCapturePort,
+        }));
+      }
+    });
+
+    const off = tdmApi.onEvent((evt) => {
+      if (!mounted || !evt) return;
+      if (evt.status) setTdmStatus(evt.status);
+      if (evt.event === 'tdm-hidden-by-user') {
+        setTdmHiddenByUser(true);
+      } else if (evt.event === 'tdm-exited') {
+        setTdmHiddenByUser(false);
+      } else if (evt.event === 'tdm-activated') {
+        setTdmHiddenByUser(false);
+        if (activeViewRef.current !== 'download') {
+          setActiveView('download');
+          showToast(TRANSLATIONS[langRef.current].toasts.tdmActivatedFromExt, 'success');
+        }
+      }
+    });
+
+    return () => {
+      mounted = false;
+      off();
+    };
+  }, [showToast]);
+
+  // Ensure TDM hides immediately when navigating away from Downloader or opening overlays
+  useEffect(() => {
+    const tdmApi = window.joelDesktop?.tdm;
+    if (!tdmApi || !isDesktopTdmSupported()) return;
+    if (activeView !== 'download' || updateModalOpen || mobileNavOpen) {
+      tdmApi.setVisible(false).then((res) => {
+        if (res?.status) setTdmStatus(res.status);
+      });
+    }
+  }, [activeView, updateModalOpen, mobileNavOpen]);
+
+  const handlePickTdmExe = useCallback(async () => {
+    const tdmApi = window.joelDesktop?.tdm;
+    if (!tdmApi) return;
+    const res = await tdmApi.pickExe();
+    if (res?.status) setTdmStatus(res.status);
+    if (res?.ok && res.exePath) {
+      setConfig((prev) => ({ ...prev, tdmExePath: res.exePath! }));
+      const base = res.exePath.split(/[\\/]/).pop() || res.exePath;
+      showToast(TRANSLATIONS[langRef.current].toasts.tdmExeSelected(base), 'success');
+    }
+  }, [showToast]);
+
+  const handleAttachTdm = useCallback(
+    async (bounds?: TdmBounds) => {
+      const tdmApi = window.joelDesktop?.tdm;
+      if (!tdmApi) return;
+      if (bounds) lastDownloadBoundsRef.current = bounds;
+      setTdmHiddenByUser(false);
+      setTdmStatus((prev) => ({ ...prev, starting: true, lastError: '' }));
+      const res = await tdmApi.attach(bounds || lastDownloadBoundsRef.current, {
+        autoLaunch: true,
+        visible: true,
+      });
+      if (res?.status) setTdmStatus(res.status);
+      if (res && !res.ok && res.error) {
+        showToast(res.error, 'warning');
+      }
+    },
+    [showToast]
+  );
+
+  const handleUpdateTdmBounds = useCallback((bounds: TdmBounds) => {
+    lastDownloadBoundsRef.current = bounds;
+    window.joelDesktop?.tdm.updateBounds(bounds).catch(() => {});
+  }, []);
+
+  const handleSetTdmVisible = useCallback((visible: boolean, bounds?: TdmBounds) => {
+    if (bounds) lastDownloadBoundsRef.current = bounds;
+    window.joelDesktop?.tdm.setVisible(visible, bounds).then((res) => {
+      if (res?.status) setTdmStatus(res.status);
+    });
+  }, []);
+
+  const handleDetachTdm = useCallback(async () => {
+    const tdmApi = window.joelDesktop?.tdm;
+    if (!tdmApi) return;
+    setTdmHiddenByUser(false);
+    const res = await tdmApi.detach();
+    if (res?.status) setTdmStatus(res.status);
+    showToast(TRANSLATIONS[langRef.current].toasts.tdmDetached, 'neutral');
+  }, [showToast]);
+
+  const handleRelaunchTdm = useCallback(async (bounds?: TdmBounds) => {
+    const tdmApi = window.joelDesktop?.tdm;
+    if (!tdmApi) return;
+    if (bounds) lastDownloadBoundsRef.current = bounds;
+    setTdmHiddenByUser(false);
+    setTdmStatus((prev) => ({ ...prev, starting: true, lastError: '' }));
+    const res = await tdmApi.relaunch(bounds || lastDownloadBoundsRef.current);
+    if (res?.status) setTdmStatus(res.status);
+  }, []);
+
+  // Live progress loop for active transcriptions & conversions
   useEffect(() => {
     const timer = window.setInterval(() => {
-      // 1. Advance active transcription tasks through cloud stages
       setTranscriptions((prev) => {
         const hasActive = prev.some((item) => item.stage !== 'completed');
         if (!hasActive) return prev;
@@ -159,7 +274,6 @@ export default function App() {
         });
       });
 
-      // 2. Advance active format conversions
       setConversions((prev) => {
         const hasActive = prev.some((c) => c.status === 'converting');
         if (!hasActive) return prev;
@@ -178,7 +292,6 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, []);
 
-  // Create tasks helpers
   const createTranscriptionTask = useCallback(
     (params: {
       fileName: string;
@@ -215,185 +328,19 @@ export default function App() {
     [config.ffmpegAutoExtract, showToast]
   );
 
-  const createDownloadTask = useCallback(
-    (params: {
-      rawInput: string;
-      cleanUrl: string;
-      fileName: string;
-      saveDir?: string;
-      engine: DownloadEngine;
-      threads: ThreadCount;
-      mediaQuality?: MediaQuality;
-      source: DownloadSource;
-      referer?: string;
-      userAgent?: string;
-      hasCookies?: boolean;
-      autoStart?: boolean;
-    }) => {
-      const tr = TRANSLATIONS[langRef.current].toasts;
-      const chunkCount = getChunkCountForThreads(params.threads);
-      const effectiveDir = (params.saveDir ?? config.defaultSaveDir).trim();
-
-      if (!localEngineOnline) {
-        showToast(
-          langRef.current === 'zh'
-            ? '请先启动 Joel Desk Pro 桌面客户端以执行多线程下载'
-            : 'Launch the Joel Desk Pro desktop client to start multi-chunk downloads',
-          'warning'
-        );
-        return '';
-      }
-
-      const tempId = `pending-${Date.now()}`;
-      dispatchToLocalEngine(config.chromeBridgePort, config.chromeBridgeToken, {
-        url: params.cleanUrl,
-        fileName: params.fileName,
-        saveDir: effectiveDir,
-        threads: params.threads,
-        referer: params.referer,
-        kind: params.engine === 'ytdlp' ? 'video-platform' : 'http',
-      }).then((res) => {
-        if (res.ok && res.task) {
-          const lt = res.task;
-          setDownloads((prev) => {
-            if (prev.some((d) => d.id === lt.id)) return prev;
-            const nextTask: DownloadTask = {
-              id: lt.id,
-              rawInput: params.rawInput,
-              cleanUrl: lt.url,
-              fileName: lt.fileName,
-              saveDir: lt.saveDir,
-              engine: lt.engine || params.engine,
-              threads: lt.threads as ThreadCount,
-              mediaQuality: params.mediaQuality,
-              chunks: lt.chunks,
-              totalMB: Number(((lt.totalBytes || 0) / (1024 * 1024)).toFixed(2)),
-              downloadedMB: Number(((lt.downloadedBytes || 0) / (1024 * 1024)).toFixed(2)),
-              speedMBps: lt.speedMBps || 0,
-              status: lt.status === 'completed' ? 'completed' : 'downloading',
-              createdAt: nowTimeLabel(),
-              source: params.source,
-              referer: params.referer,
-              hasCookies: lt.hasCookies,
-              executionMode: 'local_engine',
-            };
-            return [nextTask, ...prev];
-          });
-          showToast(tr.localEngineStarted(chunkCount), 'success');
-        }
-      });
-
-      return tempId;
-    },
-    [
-      config.chromeBridgePort,
-      config.chromeBridgeToken,
-      config.defaultSaveDir,
-      localEngineOnline,
-      showToast,
-    ]
-  );
-
-  const handleCheckClient = useCallback(() => {
-    probeLocalEngine(config.chromeBridgePort).then((res) => {
-      setLocalEngineOnline(res.online);
-      if (res.chromeDefaultDir) setChromeDefaultDir(res.chromeDefaultDir);
-      showToast(
-        res.online
-          ? langRef.current === 'zh'
-            ? '桌面客户端连接正常'
-            : 'Desktop client connected'
-          : langRef.current === 'zh'
-            ? '未检测到桌面客户端（端口 ' + config.chromeBridgePort + '）'
-            : `Desktop client offline (port ${config.chromeBridgePort})`,
-        res.online ? 'success' : 'warning'
-      );
-    });
-  }, [config.chromeBridgePort, showToast]);
-
-  const handlePickFolder = useCallback(async (): Promise<boolean> => {
-    const res = await pickDesktopFolder(config.chromeBridgePort);
-    if (res.ok && res.dir) {
-      setConfig((prev) => ({ ...prev, defaultSaveDir: res.dir! }));
-      showToast(TRANSLATIONS[langRef.current].toasts.saveDirSwitched(res.dir), 'success');
-      return true;
-    }
-    if (res.canceled) return true;
-    return false;
-  }, [config.chromeBridgePort, showToast]);
-
-  const handleChangeSaveDir = useCallback(
-    (dir: string) => {
-      const cleaned = dir.trim();
-      setConfig((prev) => ({ ...prev, defaultSaveDir: cleaned }));
-      setDesktopSaveDir(config.chromeBridgePort, cleaned).then((res) => {
-        if (res.chromeDefaultDir) setChromeDefaultDir(res.chromeDefaultDir);
-      });
-      const label =
-        cleaned ||
-        chromeDefaultDir ||
-        TRANSLATIONS[langRef.current].download.chromeDefaultLabel;
-      showToast(TRANSLATIONS[langRef.current].toasts.saveDirSwitched(label), 'success');
-    },
-    [chromeDefaultDir, config.chromeBridgePort, showToast]
-  );
-
-  // Continuously poll Desktop Client engine for online status, Chrome default folder & real tasks (including Chrome extension captures!)
+  // Poll local compute/updater HTTP engine
   useEffect(() => {
     let cancelled = false;
 
-    const syncEngine = async () => {
+    const checkHealth = async () => {
       const res = await probeLocalEngine(config.chromeBridgePort);
       if (cancelled) return;
       setLocalEngineOnline(res.online);
       setLocalEnginePackaged(Boolean(res.packaged));
-      if (res.chromeDefaultDir) setChromeDefaultDir(res.chromeDefaultDir);
-      if (typeof res.customSaveDir === 'string') {
-        setConfig((prev) =>
-          prev.defaultSaveDir === res.customSaveDir
-            ? prev
-            : { ...prev, defaultSaveDir: res.customSaveDir! }
-        );
-      }
-      if (res.online && Array.isArray(res.tasks)) {
-        setDownloads((prev) => {
-          const prevMap = new Map(prev.map((item) => [item.id, item]));
-          const merged: DownloadTask[] = res.tasks!.map((lt) => {
-            const existing = prevMap.get(lt.id);
-            const totalMB = Number(((lt.totalBytes || 0) / (1024 * 1024)).toFixed(2));
-            const downloadedMB = Number(((lt.downloadedBytes || 0) / (1024 * 1024)).toFixed(2));
-            return {
-              id: lt.id,
-              rawInput: existing?.rawInput || lt.url,
-              cleanUrl: lt.url,
-              fileName: lt.fileName,
-              saveDir: lt.saveDir,
-              engine: lt.engine || existing?.engine || 'http_range',
-              threads: (lt.threads as ThreadCount) || 16,
-              mediaQuality: existing?.mediaQuality,
-              chunks: Array.isArray(lt.chunks) && lt.chunks.length > 0 ? lt.chunks : [0],
-              totalMB,
-              downloadedMB,
-              speedMBps: lt.speedMBps || 0,
-              status:
-                lt.status === 'completed'
-                  ? 'completed'
-                  : lt.status === 'paused'
-                    ? 'paused'
-                    : 'downloading',
-              createdAt: existing?.createdAt || nowTimeLabel(),
-              source: lt.source === 'chrome_extension' ? 'chrome_extension' : existing?.source || 'manual',
-              hasCookies: Boolean(lt.hasCookies),
-              executionMode: 'local_engine',
-            };
-          });
-          return merged.reverse();
-        });
-      }
     };
 
-    syncEngine();
-    const timer = window.setInterval(syncEngine, 1500);
+    checkHealth();
+    const timer = window.setInterval(checkHealth, 3000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -491,7 +438,6 @@ export default function App() {
         return;
       }
 
-      // Fallback: open provider login directly in browser
       setComputeState((prev) => ({ ...prev, status: 'offline' }));
       openExternalTab(getComputeBrowserAuthUrl(provider, false, config.chromeBridgePort));
       showToast(
@@ -615,7 +561,6 @@ export default function App() {
     [config.githubBranch, config.githubRepo, showToast]
   );
 
-  // Only auto-check on startup when user explicitly turns on autoCheckUpdate (off by default for private repos)
   useEffect(() => {
     if (!config.autoCheckUpdate) return;
     handleCheckGitHubUpdate(true);
@@ -739,19 +684,39 @@ export default function App() {
     );
   };
 
-  const handleDispatchAgentAction = (messageId: string, action: AgentActionPayload) => {
-    let taskId = '';
+  const handleDispatchAgentAction = async (messageId: string, action: AgentActionPayload) => {
     if (action.type === 'download') {
-      taskId = createDownloadTask({
-        rawInput: action.rawInput,
-        cleanUrl: action.cleanUrl,
-        fileName: action.fileName,
-        engine: action.engine,
-        threads: action.threads,
-        mediaQuality: action.mediaQuality,
-        source: 'agent',
+      const tdmApi = window.joelDesktop?.tdm;
+      if (!tdmApi || !isDesktopTdmSupported()) {
+        showToast(TRANSLATIONS[langRef.current].toasts.tdmMissingExe, 'warning');
+        setActiveView('download');
+        return;
+      }
+      const res = await tdmApi.sendUrl({
+        url: action.cleanUrl,
+        filename: action.fileName,
       });
-    } else if (action.type === 'transcribe') {
+      const st = await tdmApi.getStatus();
+      if (st) setTdmStatus(st);
+      if (res.ok) {
+        const taskId = `tdm-${Date.now()}`;
+        handleUpdateAgentAction(messageId, (prev) => ({
+          ...prev,
+          dispatchedTaskId: taskId,
+        }));
+        showToast(TRANSLATIONS[langRef.current].toasts.tdmDispatched, 'success');
+        setActiveView('download');
+      } else if (res.needsExe) {
+        showToast(TRANSLATIONS[langRef.current].toasts.tdmMissingExe, 'warning');
+        setActiveView('download');
+      } else {
+        showToast(res.error || TRANSLATIONS[langRef.current].toasts.tdmDispatchFailed, 'warning');
+      }
+      return;
+    }
+
+    let taskId = '';
+    if (action.type === 'transcribe') {
       taskId = createTranscriptionTask({
         fileName: action.fileName,
         fileSizeBytes: action.fileSizeBytes,
@@ -781,7 +746,6 @@ export default function App() {
 
   const activeCounts = {
     transcribe: transcriptions.filter((item) => item.stage !== 'completed').length,
-    download: downloads.filter((item) => item.status === 'downloading').length,
     convert: conversions.filter((item) => item.status === 'converting').length,
   };
 
@@ -802,21 +766,48 @@ export default function App() {
         </button>
       );
     }
-    if (activeView === 'download' && downloads.some((d) => d.status === 'completed')) {
+
+    if (activeView === 'download' && tdmStatus.supported && tdmStatus.exeExists) {
+      const statusText = tdmStatus.detached
+        ? t.download.statusDetached
+        : tdmStatus.attached && tdmStatus.visible && !tdmHiddenByUser
+          ? t.download.statusDocked
+          : t.download.statusHidden;
+      const statusDot =
+        tdmStatus.attached && tdmStatus.visible && !tdmHiddenByUser
+          ? 'bg-[#16A34A]'
+          : tdmStatus.running
+            ? 'bg-[#2563EB]'
+            : 'bg-[#94A3B8]';
+
       return (
-        <button
-          type="button"
-          onClick={() => {
-            setDownloads((prev) => prev.filter((d) => d.status !== 'completed'));
-            showToast(t.toasts.clearedDownloads);
-          }}
-          className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3.5 py-1.5 text-[12px] font-medium text-[#475569] hover:bg-[#F8F9FA] hover:text-[#0F172A] whitespace-nowrap shrink-0"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          {t.topbar.clearCompleted}
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="inline-flex items-center gap-1.5 rounded-inner bg-[#F3F4F6] px-2.5 py-1 font-mono text-[11px] font-medium text-[#475569]">
+            <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} />
+            {statusText}
+          </span>
+          <button
+            type="button"
+            onClick={() => handleAttachTdm(lastDownloadBoundsRef.current)}
+            className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#0F172A] hover:border-[#2563EB] hover:text-[#2563EB] whitespace-nowrap shrink-0"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            {tdmStatus.detached ? t.download.reattachBtn : t.download.resyncBtn}
+          </button>
+          {!tdmStatus.detached && tdmStatus.attached && (
+            <button
+              type="button"
+              onClick={handleDetachTdm}
+              className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:bg-[#F8F9FA] hover:text-[#0F172A] whitespace-nowrap shrink-0"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              {t.download.detachBtn}
+            </button>
+          )}
+        </div>
       );
     }
+
     if (activeView === 'convert' && conversions.some((c) => c.status === 'completed')) {
       return (
         <button
@@ -842,6 +833,7 @@ export default function App() {
         activeView={activeView}
         onSelectView={setActiveView}
         activeCounts={activeCounts}
+        tdmRunning={tdmStatus.running}
         hasUpdate={Boolean(updateInfo?.hasUpdate)}
         onOpenUpdateModal={handleOpenUpdateModal}
         mobileOpen={mobileNavOpen}
@@ -946,63 +938,17 @@ export default function App() {
           {activeView === 'download' && (
             <DownloadView
               lang={lang}
-              tasks={downloads}
               config={config}
-              localEngineOnline={localEngineOnline}
-              chromeDefaultDir={chromeDefaultDir}
-              onCheckClient={handleCheckClient}
-              onPickFolder={handlePickFolder}
-              onChangeSaveDir={handleChangeSaveDir}
-              onCreateDownload={(params) =>
-                createDownloadTask({
-                  ...params,
-                  source: params.source ?? 'manual',
-                })
-              }
-              onSendToTranscribe={(task) => {
-                createTranscriptionTask({
-                  fileName: task.fileName,
-                  fileSizeBytes: Math.round(task.totalMB * 1024 * 1024),
-                  mediaKind: detectMediaKind(task.fileName),
-                  provider: 'colab-t4',
-                  preset: 'balanced',
-                  outputFormat: 'md_plain',
-                  language: 'auto',
-                  source: 'manual',
-                });
-                setActiveView('transcribe');
-              }}
-              onSendToConvert={(task, targetFormat) => {
-                createConversionTask({
-                  fileName: task.fileName,
-                  fileSizeBytes: Math.round(task.totalMB * 1024 * 1024),
-                  sourceFormat: detectDocumentFormat(task.fileName),
-                  targetFormat,
-                  autoStart: true,
-                  source: 'manual',
-                });
-                setActiveView('convert');
-              }}
-              onTogglePause={(id) =>
-                setDownloads((prev) =>
-                  prev.map((item) => {
-                    if (item.id !== id || item.status === 'completed') return item;
-                    return {
-                      ...item,
-                      status: item.status === 'paused' ? 'downloading' : 'paused',
-                      speedMBps:
-                        item.status === 'paused'
-                          ? Math.max(18, item.threads * 1.4)
-                          : 0,
-                    };
-                  })
-                )
-              }
-              onDeleteTask={(id) => {
-                deleteLocalEngineTask(config.chromeBridgePort, id);
-                setDownloads((prev) => prev.filter((item) => item.id !== id));
-              }}
-              onCopyText={handleCopyText}
+              tdmStatus={tdmStatus}
+              hiddenByUser={tdmHiddenByUser}
+              overlayBlocking={updateModalOpen || mobileNavOpen}
+              onPickExe={handlePickTdmExe}
+              onAttach={handleAttachTdm}
+              onUpdateBounds={handleUpdateTdmBounds}
+              onSetVisible={handleSetTdmVisible}
+              onDetach={handleDetachTdm}
+              onRelaunch={handleRelaunchTdm}
+              onOpenSettings={() => setActiveView('settings')}
             />
           )}
 
@@ -1041,12 +987,29 @@ export default function App() {
             <SettingsView
               lang={lang}
               config={config}
+              tdmStatus={tdmStatus}
+              onPickTdmExe={handlePickTdmExe}
+              onOpenDownloadDocked={() => {
+                setTdmHiddenByUser(false);
+                setActiveView('download');
+              }}
+              onDetachTdm={handleDetachTdm}
               onSaveConfig={(next) => {
                 setConfig(next);
+                if (window.joelDesktop?.tdm && isDesktopTdmSupported()) {
+                  window.joelDesktop.tdm
+                    .saveSettings({
+                      tdm_exe_path: next.tdmExePath.trim(),
+                      tdm_auto_launch: next.tdmAutoLaunch,
+                      tdm_close_on_exit: next.tdmCloseOnExit,
+                      tdm_hide_on_drag: next.tdmHideOnDrag,
+                      tdm_capture_port: next.tdmCapturePort,
+                    })
+                    .then((res) => {
+                      if (res?.status) setTdmStatus(res.status);
+                    });
+                }
                 if (localEngineOnline) {
-                  setDesktopSaveDir(next.chromeBridgePort, next.defaultSaveDir.trim()).then((res) => {
-                    if (res && res.chromeDefaultDir) setChromeDefaultDir(res.chromeDefaultDir);
-                  });
                   syncLocalComputeSettings(next.chromeBridgePort, next.chromeBridgeToken, {
                     auto_shutdown_enabled: next.autoShutdownEnabled,
                     auto_shutdown_minutes: next.autoShutdownMinutes,

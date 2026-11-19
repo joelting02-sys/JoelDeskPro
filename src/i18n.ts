@@ -46,40 +46,27 @@ export interface Translations {
   toasts: {
     copied: (label: string) => string;
     newChatStarted: string;
-    clearedDownloads: string;
     clearedConversions: string;
     videoAudioQueued: string;
     cloudTranscribeQueued: string;
-    localEngineStarted: (chunks: number) => string;
-    pluginLocalDownload: (fileName: string) => string;
-    webRangeStarted: (chunks: number) => string;
-    savedToDir: string;
-    savedViaExtension: string;
-    savedToBrowser: string;
-    corsVideoFallback: string;
-    corsDirectFallback: string;
-    pluginReceived: (fileName: string) => string;
-    multiThreadStarted: (threads: number, chunks: number) => string;
-    handshakeSending: string;
-    invalidPluginUrl: string;
-    pluginDualConnected: string;
-    pluginWebConnected: string;
+    tdmDispatched: string;
+    tdmDispatchFailed: string;
+    tdmMissingExe: string;
+    tdmExeSelected: (name: string) => string;
+    tdmDetached: string;
+    tdmReattached: string;
+    tdmActivatedFromExt: string;
     foundGitHubCommit: (sha: string) => string;
     alreadyLatest: string;
     checkUpdateFailed: string;
     localUpdated: string;
     convertingTo: (fmt: string) => string;
     batchConvertStarted: string;
-    dirAuthorized: (name: string) => string;
-    saveDirSwitched: (dir: string) => string;
     configSaved: string;
     cleanUrlLabel: string;
-    chromeExtUrlLabel: string;
     terminalCmdLabel: string;
     mdPlainLabel: string;
     srtLabel: string;
-    localEngineDirectLabel: string;
-    corsLimitedLabel: string;
   };
   agent: {
     dropTitle: string;
@@ -98,7 +85,6 @@ export interface Translations {
     placeholder: string;
     sendCommand: string;
     downloadDispatch: string;
-    threadsUnit: (count: number) => string;
     addedToDownload: string;
     sendToDownload: string;
     cloudTranscribe: string;
@@ -177,62 +163,31 @@ export interface Translations {
     };
   };
   download: {
-    inputPlaceholder: string;
-    threadsUnit: (count: number) => string;
-    startDownload: string;
-    filteredNoise: string;
-    validLink: string;
-    invalidLink: string;
-    saveTo: string;
-    chromeDefaultLabel: string;
-    resetChromeDefault: string;
-    switchDirTitle: string;
-    chooseFolderBtn: string;
-    customPathLabel: string;
-    customPathPlaceholder: string;
-    confirm: string;
-    pluginTitle: string;
-    statusClientOnline: string;
-    statusClientOffline: string;
-    pluginDesc: string;
-    openPluginSettings: string;
-    configurePlugin: string;
-    filterAll: (n: number) => string;
-    filterActive: (n: number) => string;
-    filterCompleted: (n: number) => string;
-    totalSpeed: string;
-    emptyList: string;
-    fromExtension: string;
-    cookiesSynced: string;
-    chunksMeta: (threads: number, chunks: number) => string;
-    savedLocally: string;
-    paused: string;
-    sendToTranscribe: string;
-    convertFormat: string;
-    selectTargetFormat: string;
-    resumeDownload: string;
-    pauseDownload: string;
-    copyCleanUrl: string;
-    deleteTask: string;
-    chunksProgressTitle: (chunks: number) => string;
-    pluginModal: {
-      title: string;
-      subtitle: (dir: string) => string;
-      close: string;
-      localChannel: string;
-      localOnline: string;
-      localOffline: string;
-      downloadExtZip: string;
-      copyExtensionsUrl: string;
-      testConnection: string;
-      step1Prefix: string;
-      step1Suffix: string;
-      step2Prefix: string;
-      step2Bold: string;
-      step3Prefix: string;
-      step3Bold: string;
-      step3Suffix: string;
-    };
+    webOnlyTitle: string;
+    webOnlyDesc: string;
+    missingExeTitle: string;
+    missingExeDesc: string;
+    pickExeBtn: string;
+    openSettingsBtn: string;
+    startingTitle: string;
+    startingDesc: string;
+    detachedTitle: string;
+    detachedDesc: string;
+    reattachBtn: string;
+    hiddenTitle: string;
+    hiddenDesc: string;
+    readyTitle: string;
+    readyDesc: string;
+    restoreBtn: string;
+    launchAndDockBtn: string;
+    relaunchBtn: string;
+    changeExeBtn: string;
+    dockedUnderlayHint: string;
+    resyncBtn: string;
+    detachBtn: string;
+    statusDocked: string;
+    statusDetached: string;
+    statusHidden: string;
   };
   convert: {
     presets: {
@@ -273,18 +228,27 @@ export interface Translations {
     autoShutdownTitle: string;
     autoShutdownMinutes: string;
     ffmpegExtract: string;
-    downloaderTitle: string;
-    downloaderDesc: string;
-    downloaderRpc: string;
-    defaultThreads: string;
-    defaultSaveDir: string;
-    bridgePort: string;
-    bridgeToken: string;
-    ytdlpPath: string;
+    tdmTitle: string;
+    tdmDesc: string;
+    tdmStatusWeb: string;
+    tdmStatusRunning: string;
+    tdmStatusDetached: string;
+    tdmStatusReady: string;
+    tdmStatusMissing: string;
+    tdmExePath: string;
+    tdmExePlaceholder: string;
+    tdmPickExeBtn: string;
+    tdmCapturePort: string;
+    tdmExtensionTitle: string;
+    tdmExtensionDesc: (port: number) => string;
+    tdmAutoLaunch: string;
+    tdmCloseOnExit: string;
+    tdmHideOnDrag: string;
+    tdmOpenDockedBtn: string;
+    tdmDetachBtn: string;
+    converterTitle: string;
+    converterDesc: string;
     converterUrl: string;
-    enableBridge: string;
-    autoStartCapture: string;
-    clipboardSniff: string;
     githubTitle: string;
     githubDesc: string;
     openUpdateBtn: string;
@@ -297,8 +261,7 @@ export interface Translations {
     protocols: {
       llm: string;
       transcribe: string;
-      download: string;
-      chromeBridge: string;
+      tdmCapture: string;
       convert: string;
     };
     saveConfig: string;
@@ -361,43 +324,27 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
     toasts: {
       copied: (label) => `Copied ${label}`,
       newChatStarted: 'Started a new conversation',
-      clearedDownloads: 'Cleared completed downloads',
       clearedConversions: 'Cleared completed conversions',
       videoAudioQueued: 'Video detected — extracting audio track & queuing transcription',
       cloudTranscribeQueued: 'Submitted to cloud T4 transcription queue',
-      localEngineStarted: (chunks) => `Dispatched to local engine (${chunks} parallel chunks)`,
-      pluginLocalDownload: (fileName) => `Sent to local engine via extension: ${fileName}`,
-      webRangeStarted: (chunks) => `Started ${chunks}-chunk parallel web download`,
-      savedToDir: 'Saved to selected folder',
-      savedViaExtension: 'Saved via extension',
-      savedToBrowser: 'Saved to Downloads',
-      corsVideoFallback:
-        'Video host restricts direct browser CORS — install JoelDeskPro extension or run local engine to save directly.',
-      corsDirectFallback:
-        'Host restricts browser CORS — use the JoelDeskPro extension or local engine for direct saving.',
-      pluginReceived: (fileName) => `Received from JoelDeskPro extension: ${fileName}`,
-      multiThreadStarted: (threads, chunks) =>
-        `Started ${threads}-thread · ${chunks}-chunk download`,
-      handshakeSending: 'Sending bidirectional handshake to JoelDeskPro extension…',
-      invalidPluginUrl: 'Invalid URL pushed by extension',
-      pluginDualConnected: 'JoelDeskPro extension connected (Web + Local Engine)',
-      pluginWebConnected: 'JoelDeskPro extension connected to Web App',
+      tdmDispatched: 'Sent link to TDM Fast',
+      tdmDispatchFailed: 'Could not reach TDM Fast capture port',
+      tdmMissingExe: 'Select your local TDM Fast .exe in Downloader or Settings first',
+      tdmExeSelected: (name) => `Selected TDM executable: ${name}`,
+      tdmDetached: 'Detached TDM Fast into standalone window',
+      tdmReattached: 'Docked TDM Fast back into Downloader view',
+      tdmActivatedFromExt: 'TDM Fast activated — switched to Downloader view',
       foundGitHubCommit: (sha) => `New GitHub commit available (${sha})`,
       alreadyLatest: 'Already on the latest GitHub commit',
       checkUpdateFailed: 'Update check failed',
       localUpdated: 'Local client updated to latest GitHub version',
       convertingTo: (fmt) => `Converting to ${fmt}`,
       batchConvertStarted: 'Started batch format conversion',
-      dirAuthorized: (name) => `Direct folder write authorized: ${name}`,
-      saveDirSwitched: (dir) => `Download directory set to ${dir}`,
       configSaved: 'Configuration saved',
       cleanUrlLabel: 'clean URL',
-      chromeExtUrlLabel: 'Chrome extensions URL',
       terminalCmdLabel: 'update command',
       mdPlainLabel: 'plain Markdown',
       srtLabel: 'SRT subtitles',
-      localEngineDirectLabel: 'Local chunk engine direct write',
-      corsLimitedLabel: 'CORS restricted (extension or local engine needed)',
     },
     agent: {
       dropTitle: 'Drop files to analyze automatically',
@@ -405,7 +352,7 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
         'Supports audio/video transcription (auto audio extraction) and document conversion',
       welcomeTitle: 'Drop a link or file, and tell me what to do',
       welcomeSubtitle:
-        'Links are cleaned automatically, media and documents are routed to the right tool — or switch directly to any workbench on the left.',
+        'Links are cleaned for TDM Fast automatically, media and documents route to the right tool — or switch directly on the left.',
       extractedLink: 'Extracted link',
       detectedLink: 'Detected link',
       copyUrl: 'Copy URL',
@@ -417,10 +364,9 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       addFilesTitle: 'Attach audio, video, or documents',
       placeholder: 'Paste a URL, drop audio/video/documents, or type an instruction…',
       sendCommand: 'Send',
-      downloadDispatch: 'High-Speed Download',
-      threadsUnit: (count) => `${count} threads`,
-      addedToDownload: 'Queued · View',
-      sendToDownload: 'Send to Downloader',
+      downloadDispatch: 'Send to Downloader',
+      addedToDownload: 'Sent · Open TDM',
+      sendToDownload: 'Download in TDM',
       cloudTranscribe: 'Cloud Transcription',
       videoSourceHint: 'Video · Auto-extract audio',
       audioSourceHint: 'Audio source',
@@ -497,64 +443,34 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       },
     },
     download: {
-      inputPlaceholder:
-        'Paste direct link, YouTube / Douyin URL, or share text — multi-chunk download to desktop…',
-      threadsUnit: (count) => `${count}T`,
-      startDownload: 'Download',
-      filteredNoise: 'Noise stripped',
-      validLink: 'Valid URL',
-      invalidLink: 'No valid http:// or https:// URL detected',
-      saveTo: 'Save to',
-      chromeDefaultLabel: 'Chrome Default Downloads',
-      resetChromeDefault: 'Use Chrome Default',
-      switchDirTitle: 'Click to set a custom folder path',
-      chooseFolderBtn: 'Choose Folder',
-      customPathLabel: 'Custom folder path (leave empty for Chrome Default)',
-      customPathPlaceholder: 'e.g. D:\\Downloads',
-      confirm: 'Apply',
-      pluginTitle: 'JoelDeskPro Chrome Extension',
-      statusClientOnline: 'Desktop Client Online',
-      statusClientOffline: 'Desktop Client Offline',
-      pluginDesc:
-        'Pairs with Joel Desk Pro desktop client — hover over any YouTube, Douyin, or Bilibili video to download directly.',
-      openPluginSettings: 'Extension Settings',
-      configurePlugin: 'Setup Chrome Extension',
-      filterAll: (n) => `All (${n})`,
-      filterActive: (n) => `Active (${n})`,
-      filterCompleted: (n) => `Completed (${n})`,
-      totalSpeed: 'Total Speed',
-      emptyList: 'No download tasks yet. Paste a link above or capture from the Chrome extension.',
-      fromExtension: 'From Extension',
-      cookiesSynced: 'Session Synced',
-      chunksMeta: (threads, chunks) => `${threads} threads · ${chunks} chunks`,
-      savedLocally: 'Saved',
-      paused: 'Paused',
-      sendToTranscribe: 'Transcribe',
-      convertFormat: 'Convert',
-      selectTargetFormat: 'Choose Target Format',
-      resumeDownload: 'Resume download',
-      pauseDownload: 'Pause download',
-      copyCleanUrl: 'Copy clean URL',
-      deleteTask: 'Remove task',
-      chunksProgressTitle: (chunks) => `${chunks} concurrent download chunks`,
-      pluginModal: {
-        title: 'JoelDeskPro Chrome Extension',
-        subtitle: (dir) => `Desktop client bridge · Saving to ${dir}`,
-        close: 'Close modal',
-        localChannel: 'Desktop Client Bridge',
-        localOnline: 'Online',
-        localOffline: 'Offline (Launch Desktop Client)',
-        downloadExtZip: 'Download JoelDeskPro (.zip)',
-        copyExtensionsUrl: 'Copy chrome://extensions',
-        testConnection: 'Check Client Connection',
-        step1Prefix: 'Unzip ',
-        step1Suffix: ' (manifest.json is at root)',
-        step2Prefix: 'Enable ',
-        step2Bold: 'Developer mode',
-        step3Prefix: 'Click ',
-        step3Bold: 'Load unpacked',
-        step3Suffix: ' & select folder',
-      },
+      webOnlyTitle: 'Windows Desktop Only',
+      webOnlyDesc:
+        'TDM Fast native window docking runs inside the Joel Desk Pro Windows desktop app (.exe). Launch the Windows client to dock TDM Fast here.',
+      missingExeTitle: 'Locate TDM Fast Executable',
+      missingExeDesc:
+        'Select your local TDM Fast .exe once. After that, opening Downloader automatically launches and docks TDM Fast into this panel, while Chrome keeps using your native TDM Fast extension.',
+      pickExeBtn: 'Select TDM Fast (.exe)',
+      openSettingsBtn: 'Open Settings',
+      startingTitle: 'Launching & Docking TDM Fast…',
+      startingDesc: 'Waiting for native TDM Fast window and aligning inside workbench bounds.',
+      detachedTitle: 'TDM Fast Detached to Standalone Window',
+      detachedDesc: 'TDM Fast is currently running in its own independent window.',
+      reattachBtn: 'Dock Back Inside Desk Pro',
+      hiddenTitle: 'TDM Fast Hidden in Background',
+      hiddenDesc:
+        'Downloads continue running in TDM Fast. Restore it into this panel or relaunch it below.',
+      readyTitle: 'TDM Fast Ready to Dock',
+      readyDesc: 'Click below to launch and dock TDM Fast inside Joel Desk Pro.',
+      restoreBtn: 'Show TDM Interface',
+      launchAndDockBtn: 'Launch & Dock TDM',
+      relaunchBtn: 'Relaunch TDM',
+      changeExeBtn: 'Change Path',
+      dockedUnderlayHint: 'TDM Fast is docked above this area.',
+      resyncBtn: 'Re-align Window',
+      detachBtn: 'Pop Out Standalone',
+      statusDocked: 'TDM Docked',
+      statusDetached: 'Standalone',
+      statusHidden: 'Background',
     },
     convert: {
       presets: {
@@ -598,19 +514,29 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       autoShutdownTitle: 'Auto-shutdown GPU when idle (synced with outer checkbox)',
       autoShutdownMinutes: 'Idle timeout',
       ffmpegExtract: 'Automatically extract 16kHz audio via local FFmpeg before cloud upload',
-      downloaderTitle: 'Local Engine & Chrome Extension Bridge',
-      downloaderDesc:
-        'Configure HTTP Range multi-chunk engine, yt-dlp media parser, local bridge port, and converter API',
-      downloaderRpc: 'Downloader HTTP Endpoint',
-      defaultThreads: 'Default Range Threads',
-      defaultSaveDir: 'Default Save Directory',
-      bridgePort: 'Extension Local Bridge Port',
-      bridgeToken: 'Extension Bridge Token',
-      ytdlpPath: 'yt-dlp Executable Path',
-      converterUrl: 'Document Converter API (LibreOffice / Pandoc)',
-      enableBridge: 'Enable local Chrome extension HTTP bridge',
-      autoStartCapture: 'Start download immediately upon capture',
-      clipboardSniff: 'Auto-detect URLs from clipboard',
+      tdmTitle: 'TDM Fast Downloader Integration',
+      tdmDesc:
+        'Dock your local TDM Fast window directly inside Downloader while keeping the native Chrome TDM extension running intact',
+      tdmStatusWeb: 'Desktop App Only',
+      tdmStatusRunning: 'Running & Docked',
+      tdmStatusDetached: 'Running Standalone',
+      tdmStatusReady: 'Executable Ready',
+      tdmStatusMissing: 'Path Not Set',
+      tdmExePath: 'Local TDM Fast Executable (.exe)',
+      tdmExePlaceholder: 'Select TDM_Fast_*.exe on your PC',
+      tdmPickExeBtn: 'Browse .exe',
+      tdmCapturePort: 'TDM Capture Port',
+      tdmExtensionTitle: 'Chrome Native TDM Extension',
+      tdmExtensionDesc: (port) =>
+        `Keep using the original TDM Fast Chrome extension as-is (127.0.0.1:${port}). Captures automatically wake Downloader.`,
+      tdmAutoLaunch: 'Auto-launch & dock TDM when entering Downloader',
+      tdmCloseOnExit: 'Close TDM process when quitting Joel Desk Pro',
+      tdmHideOnDrag: 'Temporarily hide TDM while dragging window',
+      tdmOpenDockedBtn: 'Open & Dock Downloader',
+      tdmDetachBtn: 'Pop Out Standalone',
+      converterTitle: 'Document & Media Converter',
+      converterDesc: 'Configure local LibreOffice / Pandoc conversion backend endpoint',
+      converterUrl: 'Converter Service URL',
       githubTitle: 'GitHub Client Updates',
       githubDesc:
         'Pull updates from GitHub via local Git (works with private repos) or check remote commits when public',
@@ -619,13 +545,12 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       githubBranch: 'Branch',
       autoCheckStartup: 'Check GitHub automatically on startup (requires public repo)',
       protocolTitle: 'Backend JSON Protocol Reference',
-      protocolDesc: 'Inspect the 5 standard adapter request schemas reserved for local services',
+      protocolDesc: 'Inspect the 4 standard local adapter request schemas',
       copy: 'Copy',
       protocols: {
         llm: 'LLM Intent Router (OpenAI-compatible)',
         transcribe: 'Cloud T4 Transcription',
-        download: 'Dual-Engine Download (Range / yt-dlp)',
-        chromeBridge: 'Chrome Extension Local Bridge',
+        tdmCapture: 'TDM Native Capture Endpoint',
         convert: 'Document Format Conversion',
       },
       saveConfig: 'Save Configuration',
@@ -690,47 +615,34 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
     toasts: {
       copied: (label) => `已复制${label}`,
       newChatStarted: '已开启新对话',
-      clearedDownloads: '已清理已完成的下载记录',
       clearedConversions: '已清理已完成的转换记录',
       videoAudioQueued: '已识别视频，开始自动抽离音轨并转录',
       cloudTranscribeQueued: '已提交至云端 T4 转录队列',
-      localEngineStarted: (chunks) => `已交由本地引擎 ${chunks} 分片直写硬盘`,
-      pluginLocalDownload: (fileName) => `已通过插件交由本地引擎下载：${fileName}`,
-      webRangeStarted: (chunks) => `网页端已启动 ${chunks} 分片并发拉取`,
-      savedToDir: '已写入选定本地文件夹',
-      savedViaExtension: '已通过插件保存到电脑',
-      savedToBrowser: '已保存到浏览器下载目录',
-      corsVideoFallback: '视频平台受跨域限制，安装 JoelDeskPro 插件或启动本地引擎即可直存电脑',
-      corsDirectFallback: '该源站限制浏览器跨域直连，建议安装 JoelDeskPro 插件或启动本地引擎',
-      pluginReceived: (fileName) => `已通过 JoelDeskPro 插件接收：${fileName}`,
-      multiThreadStarted: (threads, chunks) => `已启动 ${threads} 线程 · ${chunks} 分片并发下载`,
-      handshakeSending: '正在向 JoelDeskPro 插件发送双向握手信号…',
-      invalidPluginUrl: '插件推送的链接无效',
-      pluginDualConnected: 'JoelDeskPro 插件已连接（网页端 + 本地引擎双通道在线）',
-      pluginWebConnected: 'JoelDeskPro 插件已直连当前网页端，看视频右上角可一键下载',
+      tdmDispatched: '已将链接发送给 TDM Fast',
+      tdmDispatchFailed: '无法连接 TDM Fast 接收端口，请确认已启动',
+      tdmMissingExe: '请先在「高速下载」或「模型与接口」中选择本机 TDM Fast 程序路径',
+      tdmExeSelected: (name) => `已选定 TDM 程序：${name}`,
+      tdmDetached: '已将 TDM Fast 弹出为独立窗口',
+      tdmReattached: '已将 TDM Fast 重新贴合回工具箱',
+      tdmActivatedFromExt: '检测到 TDM Fast 唤起，已自动切换到下载页',
       foundGitHubCommit: (sha) => `发现 GitHub 新提交 (${sha})`,
       alreadyLatest: '当前已是 GitHub 最新版本',
       checkUpdateFailed: '检查更新失败',
       localUpdated: '本地客户端已更新至 GitHub 最新版本',
       convertingTo: (fmt) => `正在转换为 ${fmt}`,
       batchConvertStarted: '已开始批量格式转换',
-      dirAuthorized: (name) => `已授权直写本地文件夹：${name}`,
-      saveDirSwitched: (dir) => `下载保存路径已切换为 ${dir}`,
-      configSaved: '接口配置已保存',
+      configSaved: '配置已保存',
       cleanUrlLabel: '纯链接',
-      chromeExtUrlLabel: 'Chrome 扩展管理地址',
       terminalCmdLabel: '终端更新命令',
       mdPlainLabel: '无时间轴 Markdown',
       srtLabel: 'SRT 字幕',
-      localEngineDirectLabel: '本地分片引擎直写',
-      corsLimitedLabel: '跨域受限（需插件或本地引擎）',
     },
     agent: {
       dropTitle: '松开文件，交给 AI 自动识别',
       dropSubtitle: '支持音视频转录（视频自动提取音轨）及 PDF / Word 文档转换',
       welcomeTitle: '丢入链接、文件，直接说你想做什么',
       welcomeSubtitle:
-        'AI 助手会自动清洗链接、识别音视频或文档并调用工具；也可在左侧直达手动工作台。',
+        'AI 助手会自动清洗链接发给 TDM Fast、识别音视频或文档并调用工具；也可在左侧直达工作台。',
       extractedLink: '已精准提取链接',
       detectedLink: '已识别链接',
       copyUrl: '复制纯链',
@@ -743,9 +655,8 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       placeholder: '粘贴带杂字的链接、拖入 PDF/音视频，或直接输入指令…',
       sendCommand: '发送指令',
       downloadDispatch: '高速下载调度',
-      threadsUnit: (count) => `${count} 线程`,
-      addedToDownload: '已加入下载 · 查看',
-      sendToDownload: '发送到高速下载',
+      addedToDownload: '已发送 · 打开 TDM',
+      sendToDownload: '发送到 TDM 下载',
       cloudTranscribe: '云端语音转录',
       videoSourceHint: '视频源 · 将自动提取音轨',
       audioSourceHint: '音频源',
@@ -822,62 +733,33 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       },
     },
     download: {
-      inputPlaceholder: '粘贴直链、抖音 / YouTube 链接或带杂字的分享文案，由客户端多线程分片下载…',
-      threadsUnit: (count) => `${count} 线程`,
-      startDownload: '开始下载',
-      filteredNoise: '已自动过滤杂字',
-      validLink: '有效链接',
-      invalidLink: '未检测到以 http:// 或 https:// 开头的有效下载链接',
-      saveTo: '保存到',
-      chromeDefaultLabel: 'Chrome 默认下载文件夹',
-      resetChromeDefault: '恢复 Chrome 默认',
-      switchDirTitle: '点击修改保存目录',
-      chooseFolderBtn: '选择文件夹',
-      customPathLabel: '自定义路径（留空则一律使用 Chrome 默认下载目录）',
-      customPathPlaceholder: '例如 D:\\Downloads',
-      confirm: '确定',
-      pluginTitle: 'JoelDeskPro Chrome 插件',
-      statusClientOnline: '桌面客户端已连接',
-      statusClientOffline: '桌面客户端未运行',
-      pluginDesc: '与桌面客户端直连配合，刷 YouTube、抖音、B 站时在视频右上角一键高速下载',
-      openPluginSettings: '插件设置',
-      configurePlugin: '安装 Chrome 插件',
-      filterAll: (n) => `全部 (${n})`,
-      filterActive: (n) => `下载中 (${n})`,
-      filterCompleted: (n) => `已完成 (${n})`,
-      totalSpeed: '总速率',
-      emptyList: '暂无下载任务，粘贴链接或通过 Chrome 插件捕获即可开始',
-      fromExtension: '来自 Chrome 插件',
-      cookiesSynced: '已同步登录态',
-      chunksMeta: (threads, chunks) => `${threads} 线程 · ${chunks} 分片并发`,
-      savedLocally: '已保存',
-      paused: '已暂停',
-      sendToTranscribe: '送去转录',
-      convertFormat: '转换格式',
-      selectTargetFormat: '选择目标格式',
-      resumeDownload: '继续下载',
-      pauseDownload: '暂停下载',
-      copyCleanUrl: '复制纯链接',
-      deleteTask: '移除任务',
-      chunksProgressTitle: (chunks) => `${chunks} 个分片并发下载进度`,
-      pluginModal: {
-        title: 'JoelDeskPro Chrome 插件',
-        subtitle: (dir) => `桌面客户端直连通道 · 当前保存至 ${dir}`,
-        close: '关闭窗口',
-        localChannel: '桌面客户端连接状态',
-        localOnline: '在线',
-        localOffline: '未连接（请打开桌面客户端）',
-        downloadExtZip: '下载 JoelDeskPro 插件 (.zip)',
-        copyExtensionsUrl: '复制 chrome://extensions',
-        testConnection: '检测客户端连接',
-        step1Prefix: '解压 ',
-        step1Suffix: '（首层即含 manifest.json）',
-        step2Prefix: '扩展页右上角开 ',
-        step2Bold: '开发者模式',
-        step3Prefix: '点 ',
-        step3Bold: '加载已解压扩展',
-        step3Suffix: ' 选中文件夹',
-      },
+      webOnlyTitle: '仅 Windows 桌面客户端可用',
+      webOnlyDesc:
+        '原生 TDM Fast 窗口贴合仅在 Windows 版 Joel Desk Pro (.exe) 中运行。请启动桌面端以在此区域直接内嵌操作 TDM Fast。',
+      missingExeTitle: '选择本机 TDM Fast 程序 (.exe)',
+      missingExeDesc:
+        '选择一次电脑上的 TDM Fast 主程序路径后，点击「高速下载」会自动启动并贴合进此区域；你的 Chrome 原版 TDM 插件继续按原方式工作。',
+      pickExeBtn: '选择 TDM Fast (.exe)',
+      openSettingsBtn: '打开设置',
+      startingTitle: '正在启动并贴合 TDM Fast…',
+      startingDesc: '正在等待原生 TDM 窗口就绪并对齐到工作台区域。',
+      detachedTitle: 'TDM Fast 已弹出为独立窗口',
+      detachedDesc: '当前 TDM 正在独立窗口中运行，所有下载任务正常进行中。',
+      reattachBtn: '重新贴合回工具箱',
+      hiddenTitle: 'TDM Fast 已收起到后台',
+      hiddenDesc: '下载仍在后台运行，你可以一键唤回此区域或重新启动 TDM。',
+      readyTitle: 'TDM Fast 已就绪',
+      readyDesc: '点击下方按钮将本机 TDM Fast 贴合进当前下载界面。',
+      restoreBtn: '唤出 TDM 界面',
+      launchAndDockBtn: '启动并贴合 TDM',
+      relaunchBtn: '重启 / 唤回 TDM',
+      changeExeBtn: '更换程序路径',
+      dockedUnderlayHint: 'TDM Fast 已贴合运行于上方区域。',
+      resyncBtn: '重新对齐窗口',
+      detachBtn: '独立弹出',
+      statusDocked: 'TDM 已贴合',
+      statusDetached: '独立窗口',
+      statusHidden: '后台运行',
     },
     convert: {
       presets: {
@@ -919,19 +801,28 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       autoShutdownTitle: '闲置自动关机（与外部勾选项双向同步）',
       autoShutdownMinutes: '静置超时',
       ffmpegExtract: '拖入视频时自动调用本地 FFmpeg 提取 16kHz 音频后再上传云端',
-      downloaderTitle: '本地下载内核与 Chrome 插件桥接',
-      downloaderDesc:
-        '配置 HTTP Range 多线程分片引擎、yt-dlp 流媒体内核、本地 Chrome 插件桥接服务及文档转换接口',
-      downloaderRpc: '高速下载引擎 HTTP 接口',
-      defaultThreads: '默认 Range 分片线程数',
-      defaultSaveDir: '默认下载保存目录',
-      bridgePort: 'Chrome 插件本地桥接端口',
-      bridgeToken: 'Chrome 插件桥接 Token',
-      ytdlpPath: 'yt-dlp 可执行路径（流媒体解析内核）',
-      converterUrl: '文档转换服务地址 (LibreOffice / Pandoc)',
-      enableBridge: '开启 Chrome 插件本地 HTTP 监听',
-      autoStartCapture: '捕获后立即开始下载',
-      clipboardSniff: '剪贴板链接自动嗅探',
+      tdmTitle: 'TDM Fast 下载器集成',
+      tdmDesc: '将本机 TDM Fast 界面直接贴合进「高速下载」，Chrome 继续直接使用原版 TDM Fast 插件',
+      tdmStatusWeb: '仅桌面版可用',
+      tdmStatusRunning: '运行中 · 已贴合',
+      tdmStatusDetached: '独立窗口运行中',
+      tdmStatusReady: '已定位程序',
+      tdmStatusMissing: '未找到程序',
+      tdmExePath: '本机 TDM Fast 程序路径 (.exe)',
+      tdmExePlaceholder: '请选择本机 TDM_Fast_*.exe 路径',
+      tdmPickExeBtn: '浏览选择 .exe',
+      tdmCapturePort: 'TDM 接收端口',
+      tdmExtensionTitle: 'Chrome 原版 TDM 插件直连',
+      tdmExtensionDesc: (port) =>
+        `继续使用浏览器原本安装的 TDM Fast 插件（端口 127.0.0.1:${port}），捕获任务时工具箱会自动切到下载页。`,
+      tdmAutoLaunch: '切换到「高速下载」时自动启动并贴合 TDM',
+      tdmCloseOnExit: '关闭 Joel Desk Pro 时同时退出 TDM 进程',
+      tdmHideOnDrag: '拖动主窗口时暂隐 TDM（松手即贴回）',
+      tdmOpenDockedBtn: '前往下载并贴合',
+      tdmDetachBtn: '独立窗口弹出',
+      converterTitle: '文档与格式转换接口',
+      converterDesc: '配置本地 LibreOffice / Pandoc 格式转换后端地址',
+      converterUrl: '文档转换服务地址',
       githubTitle: 'GitHub 客户端更新',
       githubDesc:
         '私有仓库可直接用本机 Git 一键拉取；如需在网页内在线检测最新提交，可临时公开仓库后点击检查',
@@ -940,16 +831,15 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       githubBranch: '更新分支 (Branch)',
       autoCheckStartup: '启动时自动检测 GitHub 最新提交（需公开仓库）',
       protocolTitle: '后端对接 JSON 协议参考',
-      protocolDesc: '查看前端预留的 5 个标准请求结构（含双内核下载与 Chrome 插件本地桥接）',
+      protocolDesc: '查看当前保留的 4 个标准本地接口结构',
       copy: '复制',
       protocols: {
         llm: '大模型意图路由 (OpenAI 兼容)',
         transcribe: '云端 T4 语音转录',
-        download: '双内核下载指令 (Range / yt-dlp)',
-        chromeBridge: 'Chrome 插件本地桥接',
+        tdmCapture: 'TDM 原生任务接收端口',
         convert: '文档格式转换',
       },
-      saveConfig: '保存接口配置',
+      saveConfig: '保存配置',
     },
     updateModal: {
       title: 'Joel Desk Pro 版本更新',

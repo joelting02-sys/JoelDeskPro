@@ -1,70 +1,25 @@
-const { app, BrowserWindow, dialog, shell, Menu } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, screen, shell, Menu } = require('electron');
 const path = require('node:path');
 const { startLocalEngine } = require('./localEngine.cjs');
-
-const PROTOCOL_SCHEME = 'joeldeskpro';
+const { createTdmDockManager } = require('./tdmDockManager.cjs');
 
 let mainWindow = null;
 let localEngine = null;
-const pendingProtocolUrls = [];
-
-// Register joeldeskpro:// custom protocol so Chrome extension can wake up the desktop app when closed
-try {
-  if (process.defaultApp && process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient(PROTOCOL_SCHEME, process.execPath, [path.resolve(process.argv[1])]);
-  } else {
-    app.setAsDefaultProtocolClient(PROTOCOL_SCHEME);
-  }
-} catch {}
-
-function extractProtocolUrl(argv) {
-  if (!Array.isArray(argv)) return null;
-  return argv.find((arg) => typeof arg === 'string' && arg.toLowerCase().startsWith(PROTOCOL_SCHEME + '://')) || null;
-}
-
-function handleProtocolUrl(rawUrl) {
-  if (!rawUrl || typeof rawUrl !== 'string') return;
-  if (!localEngine) {
-    pendingProtocolUrls.push(rawUrl);
-    return;
-  }
-  try {
-    const parsed = new URL(rawUrl);
-    const encoded = parsed.searchParams.get('data');
-    if (encoded) {
-      const jsonStr = Buffer.from(encoded, 'base64').toString('utf8');
-      const data = JSON.parse(jsonStr);
-      const list = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [data];
-      localEngine.enqueueItems(list, 'chrome_extension');
-    }
-  } catch {}
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-  }
-}
-
-const initialProto = extractProtocolUrl(process.argv);
-if (initialProto) pendingProtocolUrls.push(initialProto);
+let tdmDockManager = null;
+let isQuitting = false;
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', (_event, argv) => {
-    const protoUrl = extractProtocolUrl(argv);
-    if (protoUrl) handleProtocolUrl(protoUrl);
+  app.on('second-instance', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
       mainWindow.focus();
     }
   });
 }
-
-app.on('open-url', (event, url) => {
-  event.preventDefault();
-  handleProtocolUrl(url);
-});
 
 function createWindow() {
   const iconPath = path.join(__dirname, '..', 'build', 'icon.png');
@@ -79,6 +34,7 @@ function createWindow() {
     icon: iconPath,
     autoHideMenuBar: true,
     webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -117,20 +73,37 @@ function createWindow() {
   });
 }
 
+function registerTdmIpcHandlers() {
+  ipcMain.handle('tdm:status', () => (tdmDockManager ? tdmDockManager.getStatus() : { supported: false }));
+  ipcMain.handle('tdm:pick-exe', () =>
+    tdmDockManager ? tdmDockManager.pickExe() : { ok: false, canceled: true }
+  );
+  ipcMain.handle('tdm:save-settings', (_e, patch) =>
+    tdmDockManager ? tdmDockManager.saveSettings(patch) : { ok: false }
+  );
+  ipcMain.handle('tdm:attach', (_e, bounds, options) =>
+    tdmDockManager ? tdmDockManager.attach(bounds, options) : { ok: false }
+  );
+  ipcMain.handle('tdm:bounds', (_e, bounds) =>
+    tdmDockManager ? tdmDockManager.updateBounds(bounds) : { ok: false }
+  );
+  ipcMain.handle('tdm:set-visible', (_e, visible, bounds) =>
+    tdmDockManager ? tdmDockManager.setVisible(visible, bounds) : { ok: false }
+  );
+  ipcMain.handle('tdm:detach', () => (tdmDockManager ? tdmDockManager.detach() : { ok: false }));
+  ipcMain.handle('tdm:relaunch', (_e, bounds) =>
+    tdmDockManager ? tdmDockManager.relaunch(bounds) : { ok: false }
+  );
+  ipcMain.handle('tdm:send-url', (_e, payload) =>
+    tdmDockManager ? tdmDockManager.sendUrl(payload) : { ok: false }
+  );
+}
+
 app.whenReady().then(() => {
-  // Automatically start built-in multi-chunk downloader & Colab/Kaggle compute proxy
+  // Start Colab/Kaggle compute & GitHub self-updater backend (127.0.0.1:17890)
   localEngine = startLocalEngine({
     port: 17890,
     isPackaged: app.isPackaged,
-    onPickFolder: async (defaultPath) => {
-      const res = await dialog.showOpenDialog(mainWindow || undefined, {
-        title: 'Select Download Folder',
-        defaultPath,
-        properties: ['openDirectory', 'createDirectory'],
-      });
-      if (res.canceled || !res.filePaths || !res.filePaths[0]) return null;
-      return res.filePaths[0];
-    },
     onLaunchInstaller: async (installerPath, isPortable) => {
       if (isPortable) {
         shell.showItemInFolder(installerPath);
@@ -144,22 +117,38 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+  registerTdmIpcHandlers();
 
-  // Process any joeldeskpro:// URL that launched the app cold
-  while (pendingProtocolUrls.length > 0) {
-    handleProtocolUrl(pendingProtocolUrls.shift());
-  }
+  tdmDockManager = createTdmDockManager({
+    mainWindow,
+    dialog,
+    screen,
+    isPackaged: app.isPackaged,
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', async (event) => {
+  if (isQuitting) return;
+  isQuitting = true;
+  event.preventDefault();
+
+  if (tdmDockManager) {
+    try {
+      await tdmDockManager.shutdown();
+    } catch {}
+    tdmDockManager = null;
+  }
   if (localEngine) {
-    localEngine.close();
+    try {
+      localEngine.close();
+    } catch {}
     localEngine = null;
   }
+  app.exit(0);
 });
 
 app.on('window-all-closed', () => {

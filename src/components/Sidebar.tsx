@@ -17,9 +17,9 @@ interface SidebarProps {
   onSelectView: (view: WorkspaceView) => void;
   activeCounts: {
     transcribe: number;
-    download: number;
     convert: number;
   };
+  tdmRunning: boolean;
   hasUpdate: boolean;
   onOpenUpdateModal: () => void;
   mobileOpen: boolean;
@@ -31,6 +31,7 @@ export function Sidebar({
   activeView,
   onSelectView,
   activeCounts,
+  tdmRunning,
   hasUpdate,
   onOpenUpdateModal,
   mobileOpen,
@@ -43,6 +44,7 @@ export function Sidebar({
     label: string;
     icon: typeof AudioWaveform;
     count: number;
+    dot?: boolean;
   }> = [
     {
       id: 'transcribe',
@@ -54,7 +56,8 @@ export function Sidebar({
       id: 'download',
       label: t.views.download,
       icon: Download,
-      count: activeCounts.download,
+      count: 0,
+      dot: tdmRunning,
     },
     {
       id: 'convert',
@@ -64,8 +67,7 @@ export function Sidebar({
     },
   ];
 
-  const totalActiveTasks =
-    activeCounts.transcribe + activeCounts.download + activeCounts.convert;
+  const totalActiveTasks = activeCounts.transcribe + activeCounts.convert;
 
   const handleNav = (view: WorkspaceView) => {
     onSelectView(view);
@@ -92,7 +94,7 @@ export function Sidebar({
         </button>
       </div>
 
-      {/* Primary Navigation: Clear Agent vs Manual Workbench Split */}
+      {/* Primary Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-3" aria-label={t.sidebar.primaryNav}>
         {/* Section 1: Agent */}
         <div className="mb-5">
@@ -150,11 +152,13 @@ export function Sidebar({
                     />
                     <span className="truncate">{tool.label}</span>
                   </span>
-                  {tool.count > 0 && (
+                  {tool.count > 0 ? (
                     <span className="font-mono text-[12px] font-medium text-[#2563EB] tabular-nums">
                       {tool.count}
                     </span>
-                  )}
+                  ) : tool.dot ? (
+                    <span className="h-2 w-2 shrink-0 rounded-full bg-[#16A34A]" />
+                  ) : null}
                 </button>
               );
             })}
@@ -162,7 +166,7 @@ export function Sidebar({
         </div>
       </nav>
 
-      {/* Minimal Active Tasks Counter (no Global Overview label, no System Load) */}
+      {/* Minimal Active Tasks Counter */}
       <div className="px-3 pb-3">
         <div className="flex items-center justify-between rounded-control border border-[#E5E7EB] bg-white px-3.5 py-2.5 text-[12px]">
           <span className="font-medium text-[#64748B]">{t.sidebar.activeTasks}</span>
@@ -172,7 +176,7 @@ export function Sidebar({
         </div>
       </div>
 
-      {/* Bottom Utility: Update & Model/API Integration */}
+      {/* Bottom Utility */}
       <div className="space-y-1 border-t border-[#E5E7EB] p-3">
         <button
           type="button"
@@ -214,10 +218,7 @@ export function Sidebar({
 
   return (
     <>
-      {/* Desktop Static Sidebar */}
       <div className="hidden h-full lg:block">{navContent}</div>
-
-      {/* Mobile Drawer Overlay */}
       {mobileOpen && (
         <div className="fixed inset-0 z-40 flex lg:hidden">
           <div

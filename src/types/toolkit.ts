@@ -55,54 +55,6 @@ export interface TranscriptionTask {
   source: 'agent' | 'manual';
 }
 
-export type ThreadCount = 8 | 16 | 32 | 64;
-export type DownloadStatus = 'downloading' | 'paused' | 'completed';
-export type DownloadEngine = 'http_range' | 'ytdlp';
-export type MediaQuality = 'best' | '1080p' | 'audio_only';
-export type DownloadSource = 'agent' | 'manual' | 'chrome_extension';
-
-export type DownloadExecutionMode =
-  | 'web_range'
-  | 'local_engine'
-  | 'extension_bridge'
-  | 'demo';
-
-export interface ChromeExtensionPayload {
-  url: string;
-  fileName?: string;
-  referer?: string;
-  userAgent?: string;
-  hasCookies?: boolean;
-  tabTitle?: string;
-  engine?: DownloadEngine;
-  mediaQuality?: MediaQuality;
-  threads?: ThreadCount;
-  handledByLocal?: boolean;
-}
-
-export interface DownloadTask {
-  id: string;
-  rawInput: string;
-  cleanUrl: string;
-  fileName: string;
-  saveDir: string;
-  engine: DownloadEngine;
-  threads: ThreadCount;
-  mediaQuality?: MediaQuality;
-  chunks: number[];
-  totalMB: number;
-  downloadedMB: number;
-  speedMBps: number;
-  status: DownloadStatus;
-  createdAt: string;
-  source: DownloadSource;
-  referer?: string;
-  userAgent?: string;
-  hasCookies?: boolean;
-  executionMode?: DownloadExecutionMode;
-  savedLocationLabel?: string;
-}
-
 export type DocumentFormat =
   | 'pdf'
   | 'docx'
@@ -147,9 +99,6 @@ export type AgentActionPayload =
       rawInput: string;
       cleanUrl: string;
       fileName: string;
-      engine: DownloadEngine;
-      threads: ThreadCount;
-      mediaQuality?: MediaQuality;
       dispatchedTaskId?: string;
     }
   | {
@@ -193,15 +142,13 @@ export interface EndpointConfig {
   autoShutdownEnabled: boolean;
   autoShutdownMinutes: IdleShutdownMinutes;
   ffmpegAutoExtract: boolean;
-  downloaderRpcUrl: string;
-  ytdlpPath: string;
-  defaultThreads: ThreadCount;
-  defaultSaveDir: string;
-  chromeBridgeEnabled: boolean;
   chromeBridgePort: number;
   chromeBridgeToken: string;
-  chromeBridgeAutoStart: boolean;
-  clipboardSniffEnabled: boolean;
+  tdmExePath: string;
+  tdmAutoLaunch: boolean;
+  tdmCloseOnExit: boolean;
+  tdmHideOnDrag: boolean;
+  tdmCapturePort: number;
   converterApiUrl: string;
   githubRepo: string;
   githubBranch: string;

@@ -3,11 +3,8 @@ import {
   AttachedFileItem,
   ComputeProvider,
   DocumentFormat,
-  DownloadEngine,
   EndpointConfig,
   MediaKind,
-  MediaQuality,
-  ThreadCount,
   TranscriptLanguage,
   TranscriptOutputFormat,
   TranscriptSegment,
@@ -146,63 +143,18 @@ export const DEFAULT_ENDPOINT_CONFIG: EndpointConfig = {
   autoShutdownEnabled: false,
   autoShutdownMinutes: 15,
   ffmpegAutoExtract: true,
-  downloaderRpcUrl: 'http://127.0.0.1:17890/api/download',
-  ytdlpPath: 'yt-dlp',
-  defaultThreads: 32,
-  defaultSaveDir: '',
-  chromeBridgeEnabled: true,
   chromeBridgePort: 17890,
   chromeBridgeToken: 'joeldeskpro-local-bridge',
-  chromeBridgeAutoStart: true,
-  clipboardSniffEnabled: true,
+  tdmExePath: '',
+  tdmAutoLaunch: true,
+  tdmCloseOnExit: true,
+  tdmHideOnDrag: false,
+  tdmCapturePort: 37651,
   converterApiUrl: 'http://127.0.0.1:8765/api/convert',
   githubRepo: 'joelting02-sys/JoelDeskPro',
   githubBranch: 'main',
   autoCheckUpdate: false,
 };
-
-const STREAM_MEDIA_HOSTS = [
-  'bilibili.com',
-  'b23.tv',
-  'youtube.com',
-  'youtu.be',
-  'x.com',
-  'twitter.com',
-  'douyin.com',
-  'tiktok.com',
-  'vimeo.com',
-  'twitch.tv',
-  'soundcloud.com',
-];
-
-export function detectDownloadEngine(url: string): DownloadEngine {
-  if (!url) return 'http_range';
-  const lower = url.toLowerCase();
-  if (lower.includes('.m3u8') || lower.includes('.mpd')) {
-    return 'ytdlp';
-  }
-  try {
-    const parsed = new URL(url);
-    const host = parsed.hostname.toLowerCase();
-    if (STREAM_MEDIA_HOSTS.some((domain) => host === domain || host.endsWith(`.${domain}`))) {
-      return 'ytdlp';
-    }
-  } catch {
-    return 'http_range';
-  }
-  return 'http_range';
-}
-
-export function mediaQualityLabel(quality: MediaQuality, lang: AppLanguage = 'en'): string {
-  switch (quality) {
-    case 'best':
-      return lang === 'zh' ? '最高画质' : 'Best Quality';
-    case '1080p':
-      return '1080P';
-    case 'audio_only':
-      return lang === 'zh' ? '仅音轨' : 'Audio Only';
-  }
-}
 
 const VIDEO_EXTS = new Set(['mp4', 'mkv', 'mov', 'avi', 'webm', 'flv', 'm4v', 'ts']);
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'm4a', 'flac', 'ogg', 'aac', 'opus', 'wma']);
@@ -392,10 +344,6 @@ export function nowTimeLabel(): string {
   return now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
-/**
- * 精准提取从 http:// 或 https:// 开始的纯净 URL，
- * 自动剥离前缀分享文案、后缀中文提示、书名号及常见闭合标点。
- */
 export function extractCleanUrl(rawText: string): {
   cleanUrl: string | null;
   hadNoise: boolean;
@@ -460,46 +408,25 @@ function inferWhisperPreset(text: string): WhisperPresetId {
   return 'balanced';
 }
 
-function inferThreads(text: string, defaultThreads: ThreadCount): ThreadCount {
-  if (text.includes('64')) return 64;
-  if (text.includes('32')) return 32;
-  if (text.includes('16')) return 16;
-  if (text.includes('8')) return 8;
-  return defaultThreads;
-}
-
 export function parseAgentIntent(
   text: string,
   attachments: AttachedFileItem[],
-  config: EndpointConfig,
+  _config: EndpointConfig,
   lang: AppLanguage = 'en'
 ): { reply: string; action?: AgentActionPayload } {
   const isZh = lang === 'zh';
   const trimmed = text.trim();
   const urlInfo = extractCleanUrl(trimmed);
 
-  // 1. Extract URL from clean or noisy text -> High-Speed Download dispatch
+  // 1. Extract URL -> Dispatch to docked TDM Fast
   if (urlInfo.cleanUrl) {
-    const threads = inferThreads(trimmed, config.defaultThreads);
-    const engine = detectDownloadEngine(urlInfo.cleanUrl);
-    const lowerText = trimmed.toLowerCase();
-    const mediaQuality: MediaQuality =
-      lowerText.includes('仅音频') ||
-      lowerText.includes('audio only') ||
-      lowerText.includes('mp3') ||
-      lowerText.includes('音轨')
-        ? 'audio_only'
-        : lowerText.includes('1080')
-          ? '1080p'
-          : 'best';
-
     const reply = isZh
       ? urlInfo.hadNoise
-        ? '已自动过滤前后杂字并提取纯净链接，系统将自动以最快多线程分片方案拉取（视频页自动解析）。'
-        : '已识别链接，将自动选择最快的多线程分片方案开始下载。'
+        ? '已自动过滤前后杂字并提取纯净链接，可直接发送到右侧内嵌的 TDM Fast 高速下载。'
+        : '已识别链接，可直接发送到内嵌的 TDM Fast 开始下载。'
       : urlInfo.hadNoise
-        ? 'Cleaned surrounding text and extracted the direct URL. Ready to download with automatic multi-chunk acceleration.'
-        : 'URL detected. Ready to start downloading with the fastest multi-chunk mode.';
+        ? 'Cleaned surrounding text and extracted the URL. Ready to send directly to TDM Fast.'
+        : 'URL detected. Ready to send directly to TDM Fast.';
 
     return {
       reply,
@@ -508,9 +435,6 @@ export function parseAgentIntent(
         rawInput: trimmed,
         cleanUrl: urlInfo.cleanUrl,
         fileName: urlInfo.fileName,
-        engine,
-        threads,
-        mediaQuality,
       },
     };
   }
@@ -568,7 +492,7 @@ export function parseAgentIntent(
     };
   }
 
-  // 4. Text mentions transcription or conversion without a real file attached (no fake sample files!)
+  // 4. Text mentions transcription or conversion without a real file attached
   const lower = trimmed.toLowerCase();
   if (
     lower.includes('转录') ||
@@ -602,8 +526,8 @@ export function parseAgentIntent(
 
   return {
     reply: isZh
-      ? '你可以直接粘贴链接让我提取并高速下载，拖入文档指定转换格式，或附上音视频让我调用云端 T4 转录；也可以随时从左侧切换到对应工作台。'
-      : 'Paste any URL to extract and download at high speed, drop documents to convert formats, or attach audio/video for cloud T4 transcription — or jump directly to any workbench on the left.',
+      ? '你可以直接粘贴链接让我清理并发送给 TDM Fast 下载，拖入文档指定转换格式，或附上音视频让我调用云端 T4 转录；也可以随时从左侧切换到对应工作台。'
+      : 'Paste any URL to clean and send to TDM Fast, drop documents to convert formats, or attach audio/video for cloud T4 transcription — or jump directly to any workbench on the left.',
   };
 }
 
@@ -653,7 +577,7 @@ export function generateSimulatedTranscript(
     {
       start: '00:00:19,100',
       end: '00:00:25,400',
-      text: '后续接入本地大模型接口和多线程下载引擎后，整套流程即可作为日常主力桌面软件使用。',
+      text: '后续接入本地大模型接口并内嵌原生 TDM 下载器后，整套流程即可作为日常主力桌面软件使用。',
     },
   ];
 }
@@ -699,19 +623,12 @@ export function triggerClientFileDownload(
   triggerClientBlobDownload(fileName, new Blob([content], { type: mimeType }));
 }
 
-export {
-  buildDeskKitChromeExtension,
-  buildDeskKitChromeExtension as generateChromeExtensionFiles,
-  buildLocalEngineScript,
-  createZipBlob,
-} from './chromeExtensionBuilder';
-
 export const API_PROTOCOL_SNIPPETS = {
   llm: `POST {llmBaseUrl}/chat/completions
 {
   "model": "qwen2.5:14b",
   "messages": [{ "role": "user", "content": "帮我下这个 https://example.com/demo.mp4" }],
-  "tools": ["extract_and_download", "cloud_transcribe", "convert_document"]
+  "tools": ["send_to_tdm", "cloud_transcribe", "convert_document"]
 }`,
   transcribe: `POST {colabOrKaggleBridgeUrl}
 Content-Type: multipart/form-data
@@ -722,26 +639,12 @@ Content-Type: multipart/form-data
   "model": "small | medium | large-v3",
   "output_format": "srt | md_plain | txt"
 }`,
-  download: `POST {downloaderRpcUrl}
+  tdmCapture: `// 原生 Chrome 插件（TDM Fast v4.7.3）直连本机 TDM 服务
+POST http://127.0.0.1:37651/capture
 {
-  "engine": "http_range | ytdlp",
-  "url": "https://example.com/resource.mp4",
-  "threads": 32,
-  "media_quality": "best | 1080p | audio_only",
-  "headers": {
-    "Referer": "https://example.com/",
-    "Cookie": "<optional_from_chrome_bridge>"
-  }
-}`,
-  chromeBridge: `// Joel Desk Pro 本地轻量 HTTP 监听服务
-POST http://127.0.0.1:17890/api/bridge/capture
-X-DeskKit-Token: joeldeskpro-local-bridge
-{
-  "source": "chrome_extension",
   "url": "https://www.bilibili.com/video/BV1xx411c7mD",
-  "referer": "https://www.bilibili.com/",
-  "userAgent": "Mozilla/5.0 ...",
-  "cookies": "SESSDATA=..."
+  "filename": "demo.mp4",
+  "referer": "https://www.bilibili.com/"
 }`,
   convert: `POST {converterApiUrl}
 Content-Type: multipart/form-data
