@@ -29,6 +29,7 @@ interface UpdateModalProps {
   onClose: () => void;
   config: EndpointConfig;
   localEngineOnline: boolean;
+  localEnginePackaged?: boolean;
   updateInfo: GitHubUpdateInfo | null;
   checking: boolean;
   checkError: string | null;
@@ -46,6 +47,7 @@ export function UpdateModal({
   onClose,
   config,
   localEngineOnline,
+  localEnginePackaged = false,
   updateInfo,
   checking,
   checkError,
@@ -109,11 +111,13 @@ export function UpdateModal({
         </div>
 
         <div className="space-y-4 p-5">
-          {/* Private Repo Info Notice */}
-          <div className="flex items-start gap-2.5 rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3.5 py-2.5 text-[12px] leading-relaxed text-[#475569]">
-            <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#64748B]" />
-            <span>{t.updateModal.privateRepoNotice}</span>
-          </div>
+          {/* Private Repo Info Notice (shown only when GitHub check reports private/404) */}
+          {checkError && !updateInfo && (
+            <div className="flex items-start gap-2.5 rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3.5 py-2.5 text-[12px] leading-relaxed text-[#475569]">
+              <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#64748B]" />
+              <span>{t.updateModal.privateRepoNotice}</span>
+            </div>
+          )}
 
           {/* Version & Remote Commit Card */}
           <div className="rounded-control border border-[#E5E7EB] bg-[#F8F9FA] p-4">
@@ -221,7 +225,11 @@ export function UpdateModal({
                 </div>
                 <div className="mt-0.5 text-[12px] text-[#64748B]">
                   {localEngineOnline
-                    ? t.updateModal.pullOnlineDesc
+                    ? localEnginePackaged
+                      ? lang === 'zh'
+                        ? '桌面客户端在线：点击下方按钮自动从 GitHub Releases 下载并启动最新 Windows 安装包。'
+                        : 'Desktop client online: click below to download and launch the latest Windows .exe from GitHub Releases.'
+                      : t.updateModal.pullOnlineDesc
                     : t.updateModal.pullOfflineDesc}
                 </div>
               </div>
@@ -243,7 +251,17 @@ export function UpdateModal({
                   className="inline-flex items-center gap-1.5 rounded-control bg-[#2563EB] px-3.5 py-2 text-[12px] font-medium text-white hover:bg-[#1D4ED8] disabled:opacity-60 whitespace-nowrap"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${updatingLocal ? 'animate-spin' : ''}`} />
-                  {updatingLocal ? t.updateModal.pullingLocal : t.updateModal.pullNowBtn}
+                  {updatingLocal
+                    ? localEnginePackaged
+                      ? lang === 'zh'
+                        ? '正在下载新版安装包…'
+                        : 'Downloading installer…'
+                      : t.updateModal.pullingLocal
+                    : localEnginePackaged
+                      ? lang === 'zh'
+                        ? '一键下载并更新客户端 (.exe)'
+                        : 'One-Click Download & Update (.exe)'
+                      : t.updateModal.pullNowBtn}
                 </button>
               ) : (
                 <button

@@ -74,10 +74,10 @@ export function Sidebar({
 
   const navContent = (
     <aside className="flex h-full w-[236px] shrink-0 flex-col border-r border-[#E5E7EB] bg-[#F3F4F6] select-none">
-      {/* Brand Wordmark with Luxury Black & Gold J Logo */}
+      {/* Brand Wordmark with White & Blue J Logo */}
       <div className="flex h-14 items-center justify-between px-4">
         <div className="flex items-center gap-2.5">
-          <BrandLogo size={32} className="shadow-[0_2px_8px_rgba(10,10,14,0.22)] rounded-[8px]" />
+          <BrandLogo size={32} className="shadow-[0_2px_8px_rgba(37,99,235,0.14)] rounded-[8px]" />
           <span className="text-[15px] font-semibold tracking-tight text-[#0F172A] whitespace-nowrap">
             Joel Desk Pro
           </span>

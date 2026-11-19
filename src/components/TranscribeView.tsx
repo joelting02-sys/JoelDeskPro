@@ -225,7 +225,7 @@ export function TranscribeView({
                     }}
                     className="inline-flex items-center gap-1.5 rounded-control bg-[#0F172A] px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-[#1E293B] whitespace-nowrap"
                   >
-                    <Cpu className="h-3.5 w-3.5 text-[#E5C158]" />
+                    <Cpu className="h-3.5 w-3.5 text-[#60A5FA]" />
                     <span>
                       {computeState.status === 'error'
                         ? ct.retryStart

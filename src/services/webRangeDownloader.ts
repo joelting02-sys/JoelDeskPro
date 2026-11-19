@@ -21,6 +21,7 @@ export interface LocalEngineTaskSnapshot {
 export interface LocalEngineStatus {
   online: boolean;
   desktop?: boolean;
+  packaged?: boolean;
   saveDir?: string;
   chromeDefaultDir?: string;
   customSaveDir?: string;
@@ -54,6 +55,7 @@ export async function probeLocalEngine(port: number): Promise<LocalEngineStatus>
     const data = (await res.json()) as {
       ok?: boolean;
       desktop?: boolean;
+      packaged?: boolean;
       saveDir?: string;
       chromeDefaultDir?: string;
       customSaveDir?: string;
@@ -62,6 +64,7 @@ export async function probeLocalEngine(port: number): Promise<LocalEngineStatus>
     return {
       online: Boolean(data?.ok),
       desktop: Boolean(data?.desktop),
+      packaged: Boolean(data?.packaged),
       saveDir: data?.saveDir,
       chromeDefaultDir: data?.chromeDefaultDir,
       customSaveDir: data?.customSaveDir,
@@ -89,21 +92,32 @@ export async function dispatchToLocalEngine(
     kind?: string;
   }
 ): Promise<{ ok: boolean; task?: LocalEngineTaskSnapshot }> {
-  try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/download`, {
-      method: 'POST',
-      headers: {
+  const tokenCandidates = Array.from(
+    new Set([token, 'joeldeskpro-local-bridge', 'deskkit-local-bridge', ''])
+  );
+
+  for (const candidateToken of tokenCandidates) {
+    try {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        'X-DeskKit-Token': token,
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) return { ok: false };
-    const data = (await res.json()) as { ok?: boolean; tasks?: LocalEngineTaskSnapshot[] };
-    return { ok: Boolean(data?.ok), task: data?.tasks?.[0] };
-  } catch {
-    return { ok: false };
+      };
+      if (candidateToken) {
+        headers['X-DeskKit-Token'] = candidateToken;
+      }
+      const res = await fetch(`http://127.0.0.1:${port}/api/download`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+      if (res.status === 403) continue;
+      if (!res.ok) return { ok: false };
+      const data = (await res.json()) as { ok?: boolean; tasks?: LocalEngineTaskSnapshot[] };
+      return { ok: Boolean(data?.ok), task: data?.tasks?.[0] };
+    } catch {
+      return { ok: false };
+    }
   }
+  return { ok: false };
 }
 
 /**

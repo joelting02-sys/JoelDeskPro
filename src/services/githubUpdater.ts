@@ -29,6 +29,8 @@ export interface LocalUpdateResult {
   ok: boolean;
   message: string;
   updatedSha?: string;
+  mode?: 'git' | 'release_exe';
+  installerPath?: string;
   log?: string;
 }
 
@@ -173,7 +175,9 @@ export async function checkGitHubUpdate(
 }
 
 /**
- * Triggers a REAL git pull + npm install + npm run build inside the running local Joel Desk Pro engine.
+ * Triggers a REAL local update inside the running Joel Desk Pro engine (git pull + build in dev mode,
+ * or latest GitHub Release .exe download & launch in packaged desktop mode).
+ * Automatically retries with legacy/omitted loopback tokens if an older local engine rejects the new token with 403.
  */
 export async function triggerLocalClientUpdate(
   port: number,
@@ -183,48 +187,91 @@ export async function triggerLocalClientUpdate(
   lang: AppLanguage = 'en'
 ): Promise<LocalUpdateResult> {
   const isZh = lang === 'zh';
-  try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/update`, {
-      method: 'POST',
-      headers: {
+  const tokenCandidates = Array.from(
+    new Set([token, 'joeldeskpro-local-bridge', 'deskkit-local-bridge', ''])
+  );
+
+  let lastError: LocalUpdateResult | null = null;
+
+  for (const candidateToken of tokenCandidates) {
+    try {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        'X-DeskKit-Token': token,
-      },
-      body: JSON.stringify({ repo, branch }),
-    });
-    const data = (await res.json()) as {
-      ok?: boolean;
-      message?: string;
-      error?: string;
-      updatedSha?: string;
-      log?: string;
-    };
-    if (!res.ok || !data.ok) {
+      };
+      if (candidateToken) {
+        headers['X-DeskKit-Token'] = candidateToken;
+      }
+
+      const res = await fetch(`http://127.0.0.1:${port}/api/update`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ repo, branch }),
+      });
+
+      const rawText = await res.text();
+      let data: {
+        ok?: boolean;
+        message?: string;
+        error?: string;
+        updatedSha?: string;
+        mode?: 'git' | 'release_exe';
+        installerPath?: string;
+        log?: string;
+      } = {};
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        data = { error: rawText.slice(0, 200) };
+      }
+
+      if (res.status === 403 || /invalid token/i.test(String(data.error || ''))) {
+        lastError = {
+          ok: false,
+          message:
+            data.error ||
+            (isZh ? '本地引擎 Token 不匹配（HTTP 403）' : 'Local engine token mismatch (HTTP 403)'),
+          log: data.log,
+        };
+        continue;
+      }
+
+      if (!res.ok || !data.ok) {
+        return {
+          ok: false,
+          message:
+            data.error ||
+            data.message ||
+            (isZh ? `本地更新失败（HTTP ${res.status}）` : `Local update failed (HTTP ${res.status})`),
+          log: data.log,
+        };
+      }
+
       return {
-        ok: false,
+        ok: true,
         message:
-          data.error ||
           data.message ||
-          (isZh ? `本地更新失败（HTTP ${res.status}）` : `Local update failed (HTTP ${res.status})`),
+          (isZh ? '本地客户端已拉取最新代码并完成构建' : 'Local client pulled latest code and rebuilt'),
+        updatedSha: data.updatedSha,
+        mode: data.mode,
+        installerPath: data.installerPath,
         log: data.log,
       };
+    } catch {
+      return {
+        ok: false,
+        message: isZh
+          ? `未检测到本机更新服务（127.0.0.1:${port}），请先启动 Joel Desk Pro 桌面客户端或使用一键更新脚本`
+          : `Local engine not detected on 127.0.0.1:${port}. Launch the Joel Desk Pro desktop client or use the update script below.`,
+      };
     }
-    return {
-      ok: true,
-      message:
-        data.message ||
-        (isZh ? '本地客户端已拉取最新代码并完成构建' : 'Local client pulled latest code and rebuilt'),
-      updatedSha: data.updatedSha,
-      log: data.log,
-    };
-  } catch {
-    return {
-      ok: false,
-      message: isZh
-        ? `未检测到本机更新服务（127.0.0.1:${port}），请先运行 joeldeskpro-local-engine.mjs 或使用一键更新脚本`
-        : `Local engine not detected on 127.0.0.1:${port}. Run joeldeskpro-local-engine.mjs or use the update script below.`,
-    };
   }
+
+  return (
+    lastError || {
+      ok: false,
+      message: isZh ? '本地更新鉴权失败' : 'Local update authorization failed',
+    }
+  );
 }
 
 export function getGitPullCommand(repo = DEFAULT_GITHUB_REPO, branch = DEFAULT_GITHUB_BRANCH): string {

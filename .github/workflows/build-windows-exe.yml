@@ -35,7 +35,7 @@ jobs:
       - name: Install Electron & electron-builder on Windows runner
         run: npm install --save-dev --legacy-peer-deps --no-audit --no-fund electron@33 electron-builder@25
 
-      - name: Generate Black & Gold J Windows icons
+      - name: Generate White & Blue J Windows icons
         run: node scripts/generate-icons.mjs
 
       - name: Build production web bundle for Electron

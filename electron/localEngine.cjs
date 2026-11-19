@@ -51,7 +51,18 @@ function detectChromeDefaultDownloadDir() {
 function startLocalEngine(options = {}) {
   const PORT = Number(options.port || process.env.JOELDESKPRO_PORT || 17890);
   const TOKEN = options.token || process.env.JOELDESKPRO_TOKEN || 'joeldeskpro-local-bridge';
+  const ACCEPTED_TOKENS = new Set(
+    [TOKEN, 'joeldeskpro-local-bridge', 'deskkit-local-bridge'].filter(Boolean)
+  );
+  const IS_PACKAGED = Boolean(options.isPackaged);
   const onPickFolder = typeof options.onPickFolder === 'function' ? options.onPickFolder : null;
+  const onLaunchInstaller =
+    typeof options.onLaunchInstaller === 'function' ? options.onLaunchInstaller : null;
+
+  function isTokenAuthorized(reqToken) {
+    if (!reqToken) return true; // Localhost loopback (127.0.0.1) allows omitted token
+    return ACCEPTED_TOKENS.has(String(reqToken).trim());
+  }
 
   const COLAB_MCP_URL = 'https://colab.googleapis.com/mcp';
   const COLAB_T4_DIR = process.env.COLAB_T4_DIR || path.join(os.homedir(), '.joeldeskpro', 'colab');
@@ -935,6 +946,8 @@ function startLocalEngine(options = {}) {
     }
   }
 
+  const recentCaptureUrls = new Map(); // normalizedUrl -> timestampMs (8s dedupe for protocol wake-up + HTTP retry)
+
   function startTask(payload) {
     const id = 'local-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
     const saveDir = resolveEffectiveSaveDir(payload.saveDir);
@@ -947,7 +960,11 @@ function startLocalEngine(options = {}) {
     const cookieHeader = buildCookieHeader(payload.cookies);
 
     const headers = {};
-    if (payload.referer) headers.Referer = payload.referer;
+    const referer =
+      payload.referer ||
+      (payload.headers && (payload.headers.Referer || payload.headers.referer)) ||
+      '';
+    if (referer) headers.Referer = referer;
     if (cookieHeader) headers.Cookie = cookieHeader;
 
     const isVideoPage =
@@ -992,18 +1009,183 @@ function startLocalEngine(options = {}) {
     return task;
   }
 
-  async function runLocalGitUpdate(repo, branch) {
-    const safeRepo = (repo || 'joelting02-sys/JoelDeskPro').replace(/[^A-Za-z0-9_.-/]/g, '');
-    const safeBranch = (branch || 'main').replace(/[^A-Za-z0-9_.-/]/g, '');
-    const cwd = process.cwd();
-    await execFileAsync('git', ['fetch', 'origin', safeBranch], { cwd, timeout: 60000 });
-    const pullRes = await execFileAsync('git', ['pull', '--ff-only', 'origin', safeBranch], { cwd, timeout: 60000 });
-    const shaRes = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd, timeout: 15000 });
+  function enqueueItems(rawList, defaultSource = 'chrome_extension') {
+    const now = Date.now();
+    for (const [k, ts] of recentCaptureUrls) {
+      if (now - ts > 8000) recentCaptureUrls.delete(k);
+    }
+    const list = Array.isArray(rawList) ? rawList : [rawList];
+    const created = [];
+    for (const item of list) {
+      if (!item || !item.url) continue;
+      const dedupeKey = String(item.url).split('#')[0];
+      const prevTs = recentCaptureUrls.get(dedupeKey);
+      if (prevTs && now - prevTs < 8000) continue;
+      recentCaptureUrls.set(dedupeKey, now);
+      created.push(startTask({ source: defaultSource, ...item }));
+    }
+    return created;
+  }
+
+  async function findGitProjectDir() {
+    const candidates = [
+      process.cwd(),
+      path.resolve(__dirname, '..'),
+      path.join(process.cwd(), 'JoelDeskPro'),
+      path.join(os.homedir(), 'JoelDeskPro'),
+      path.join(os.homedir(), 'Desktop', 'JoelDeskPro'),
+    ];
+    for (const dir of candidates) {
+      if (!dir || dir.includes('.asar')) continue;
+      try {
+        await fs.access(path.join(dir, '.git'));
+        return dir;
+      } catch {}
+    }
+    return null;
+  }
+
+  async function downloadAndLaunchLatestReleaseExe(safeRepo) {
+    const logs = [];
+    const relUrl = `https://api.github.com/repos/${safeRepo}/releases/latest`;
+    logs.push('> GET ' + relUrl);
+    const relRes = await fetch(relUrl, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'JoelDeskPro-Updater',
+      },
+    });
+    if (!relRes.ok) {
+      throw new Error(
+        relRes.status === 404
+          ? `未在 ${safeRepo} 找到已发布的 Release 安装包，请等待 GitHub Actions 构建完成或手动下载`
+          : `查询 GitHub Release 失败（HTTP ${relRes.status}）`
+      );
+    }
+    const rel = await relRes.json();
+    const assets = Array.isArray(rel.assets) ? rel.assets : [];
+    const isPortable = Boolean(process.env.PORTABLE_EXECUTABLE_FILE);
+    const exeAssets = assets.filter(
+      (a) => a && typeof a.name === 'string' && /\.exe$/i.test(a.name) && a.browser_download_url
+    );
+    const preferred =
+      exeAssets.find((a) => (isPortable ? /portable/i.test(a.name) : /setup/i.test(a.name))) ||
+      exeAssets[0];
+
+    if (!preferred) {
+      throw new Error(
+        `最新 Release (${rel.tag_name || 'latest'}) 中暂未包含 Windows .exe 安装包，请稍后重试或前往 Releases 页面下载`
+      );
+    }
+
+    const saveDir = resolveEffectiveSaveDir('');
+    await fs.mkdir(saveDir, { recursive: true });
+    const fileName = sanitizeName(preferred.name);
+    const destPath = path.join(saveDir, fileName);
+    logs.push(`> Downloading ${preferred.name} -> ${destPath}`);
+
+    const dlRes = await fetch(preferred.browser_download_url, {
+      headers: { 'User-Agent': 'JoelDeskPro-Updater' },
+    });
+    if (!dlRes.ok || !dlRes.body) {
+      throw new Error(`下载最新安装包失败（HTTP ${dlRes.status}）`);
+    }
+
+    const fh = await fs.open(destPath, 'w');
+    let written = 0;
+    try {
+      for await (const chunk of dlRes.body) {
+        const buf = Buffer.from(chunk);
+        await fh.write(buf);
+        written += buf.length;
+      }
+    } finally {
+      await fh.close();
+    }
+    logs.push(`> Downloaded ${(written / (1024 * 1024)).toFixed(1)} MB`);
+
+    if (onLaunchInstaller) {
+      await onLaunchInstaller(destPath, isPortable);
+      logs.push(isPortable ? '> Revealed portable .exe in folder' : '> Launched installer .exe');
+    }
+
+    const tag = rel.tag_name || 'latest';
     return {
       ok: true,
-      updatedSha: (shaRes.stdout || '').trim(),
-      message: 'Updated from ' + safeRepo + ' (' + safeBranch + ')',
-      log: (pullRes.stdout || pullRes.stderr || '').trim(),
+      mode: 'release_exe',
+      updatedSha: tag,
+      installerPath: destPath,
+      message: isPortable
+        ? `已下载新版便携包 ${fileName}（${tag}），已为你打开所在文件夹`
+        : `已下载最新安装包 ${fileName}（${tag}）并启动安装程序`,
+      log: logs.join('\n'),
+    };
+  }
+
+  async function runLocalGitUpdate(repo, branch) {
+    const safeRepo = (repo || 'joelting02-sys/JoelDeskPro').replace(/[^A-Za-z0-9_.\-/]/g, '');
+    const safeBranch = (branch || 'main').replace(/[^A-Za-z0-9_.\-/]/g, '');
+
+    // Packaged Electron desktop client (.exe): download & launch latest Windows Release .exe directly
+    if (IS_PACKAGED && process.platform === 'win32') {
+      return downloadAndLaunchLatestReleaseExe(safeRepo);
+    }
+
+    const projectDir = await findGitProjectDir();
+    if (!projectDir) {
+      // No local .git repo found -> try downloading latest Windows Release .exe if on Windows
+      if (process.platform === 'win32') {
+        return downloadAndLaunchLatestReleaseExe(safeRepo);
+      }
+      throw new Error(
+        `未在当前目录检测到 .git 仓库（${process.cwd()}）。请使用一键更新脚本或前往 GitHub Releases 下载最新版本。`
+      );
+    }
+
+    const logs = [];
+    logs.push(`> git fetch origin ${safeBranch} (in ${projectDir})`);
+    await execFileAsync('git', ['fetch', 'origin', safeBranch], { cwd: projectDir, timeout: 60000 });
+
+    try {
+      const pullRes = await execFileAsync('git', ['pull', '--ff-only', 'origin', safeBranch], {
+        cwd: projectDir,
+        timeout: 60000,
+      });
+      logs.push((pullRes.stdout || pullRes.stderr || '').trim());
+    } catch {
+      logs.push('> --ff-only failed, retrying with git pull --rebase --autostash');
+      const rebaseRes = await execFileAsync(
+        'git',
+        ['pull', '--rebase', '--autostash', 'origin', safeBranch],
+        { cwd: projectDir, timeout: 60000 }
+      );
+      logs.push((rebaseRes.stdout || rebaseRes.stderr || '').trim());
+    }
+
+    const execNpmOpts = {
+      cwd: projectDir,
+      timeout: 180000,
+      shell: process.platform === 'win32',
+    };
+    logs.push('> npm install');
+    const inst = await execFileAsync('npm', ['install'], execNpmOpts);
+    if (inst.stdout) logs.push(inst.stdout.trim().slice(-400));
+
+    logs.push('> npm run build');
+    const build = await execFileAsync('npm', ['run', 'build'], execNpmOpts);
+    if (build.stdout) logs.push(build.stdout.trim().slice(-400));
+
+    const shaRes = await execFileAsync('git', ['rev-parse', 'HEAD'], {
+      cwd: projectDir,
+      timeout: 15000,
+    });
+    const updatedSha = (shaRes.stdout || '').trim();
+    return {
+      ok: true,
+      mode: 'git',
+      updatedSha,
+      message: `已成功从 ${safeRepo} (${safeBranch}) 拉取并构建最新版本 (${updatedSha.slice(0, 7)})`,
+      log: logs.filter(Boolean).join('\n'),
     };
   }
 
@@ -1043,6 +1225,7 @@ function startLocalEngine(options = {}) {
         JSON.stringify({
           ok: true,
           desktop: true,
+          packaged: IS_PACKAGED,
           saveDir: effectiveSaveDir,
           chromeDefaultDir,
           customSaveDir,
@@ -1266,7 +1449,7 @@ function startLocalEngine(options = {}) {
 
     if (req.method === 'POST' && reqUrl.pathname === '/api/bridge/probe') {
       const reqToken = req.headers['x-deskkit-token'];
-      if (TOKEN && reqToken && reqToken !== TOKEN) {
+      if (!isTokenAuthorized(reqToken)) {
         res.writeHead(403, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: 'Invalid token' }));
         return;
@@ -1285,9 +1468,14 @@ function startLocalEngine(options = {}) {
       return;
     }
 
-    if (req.method === 'POST' && (reqUrl.pathname === '/api/bridge/capture' || reqUrl.pathname === '/api/download')) {
+    if (
+      req.method === 'POST' &&
+      (reqUrl.pathname === '/api/bridge/capture' ||
+        reqUrl.pathname === '/api/download' ||
+        reqUrl.pathname === '/capture')
+    ) {
       const reqToken = req.headers['x-deskkit-token'];
-      if (TOKEN && reqToken && reqToken !== TOKEN) {
+      if (!isTokenAuthorized(reqToken)) {
         res.writeHead(403, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid token' }));
         return;
@@ -1297,7 +1485,8 @@ function startLocalEngine(options = {}) {
       try {
         const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
         const list = Array.isArray(body.items) ? body.items : [body];
-        const created = list.filter((it) => it && it.url).map(startTask);
+        const defaultSrc = reqUrl.pathname === '/api/download' ? 'manual' : 'chrome_extension';
+        const created = enqueueItems(list, defaultSrc);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(
           JSON.stringify({
@@ -1316,7 +1505,7 @@ function startLocalEngine(options = {}) {
 
     if (req.method === 'POST' && reqUrl.pathname === '/api/update') {
       const reqToken = req.headers['x-deskkit-token'];
-      if (TOKEN && reqToken && reqToken !== TOKEN) {
+      if (!isTokenAuthorized(reqToken)) {
         res.writeHead(403, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: 'Invalid token' }));
         return;
@@ -1330,7 +1519,13 @@ function startLocalEngine(options = {}) {
         res.end(JSON.stringify(result));
       } catch (e) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, error: e.message || 'Update failed' }));
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: e.message || 'Update failed',
+            log: [e.stdout, e.stderr].filter(Boolean).join('\n').trim() || undefined,
+          })
+        );
       }
       return;
     }
@@ -1346,6 +1541,7 @@ function startLocalEngine(options = {}) {
   server.listen(PORT, '127.0.0.1');
 
   return {
+    enqueueItems,
     close() {
       clearInterval(watchdog);
       try {

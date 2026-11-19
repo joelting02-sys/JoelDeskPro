@@ -13,6 +13,10 @@ files:
   - '!node_modules/**/*'
 npmRebuild: false
 asar: true
+protocols:
+  - name: Joel Desk Pro Protocol
+    schemes:
+      - joeldeskpro
 win:
   target:
     - target: nsis

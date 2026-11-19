@@ -1,4 +1,4 @@
-// Zero-dependency generator for Joel Desk Pro luxury Black & Gold "J" desktop icons (build/icon.png & build/icon.ico).
+// Zero-dependency generator for Joel Desk Pro White & Blue "J" desktop icons (build/icon.png & build/icon.ico).
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import zlib from 'node:zlib';
@@ -33,8 +33,8 @@ function pngChunk(type, data) {
 }
 
 function samplePixel(nx, ny, size) {
-  const radius = 0.245;
-  const borderWidth = Math.max(0.042, 1.5 / size);
+  const radius = 0.25;
+  const borderWidth = Math.max(0.055, 1.8 / size);
 
   const dx = Math.max(radius - nx, 0, nx - (1 - radius));
   const dy = Math.max(radius - ny, 0, ny - (1 - radius));
@@ -44,39 +44,29 @@ function samplePixel(nx, ny, size) {
   const edgeDist = Math.min(nx, ny, 1 - nx, 1 - ny);
   const isBezel = dist >= radius - borderWidth || edgeDist < borderWidth;
 
-  // Inner subtle hairline chamfer
-  const innerDist = Math.min(nx - 0.095, ny - 0.095, 0.905 - nx, 0.905 - ny);
-  const isInnerHairline =
-    innerDist >= 0 && innerDist < 0.011 && dist < radius - borderWidth * 1.6;
-
-  // Sculpted luxury editorial serif "J" monogram
-  const isTopSerif = ny >= 0.245 && ny <= 0.305 && nx >= 0.48 && nx <= 0.725;
-  const isStem = nx >= 0.555 && nx <= 0.655 && ny >= 0.285 && ny <= 0.605;
+  // Clean sculpted royal blue "J" monogram
+  const isTopSerif = ny >= 0.25 && ny <= 0.315 && nx >= 0.48 && nx <= 0.725;
+  const isStem = nx >= 0.555 && nx <= 0.655 && ny >= 0.29 && ny <= 0.605;
   const cx = 0.465;
   const cy = 0.595;
   const hookDist = Math.sqrt((nx - cx) * (nx - cx) + (ny - cy) * (ny - cy));
   const isHookArc = ny >= cy - 0.01 && hookDist >= 0.095 && hookDist <= 0.19;
   const isLeftTerminal =
     Math.sqrt((nx - 0.335) * (nx - 0.335) + (ny - 0.635) * (ny - 0.635)) <= 0.056;
-  const isDiamondFinial = Math.abs(nx - 0.36) + Math.abs(ny - 0.305) <= 0.032;
 
-  const isGold = isTopSerif || isStem || isHookArc || isLeftTerminal || isDiamondFinial || isBezel;
+  const isBlue = isTopSerif || isStem || isHookArc || isLeftTerminal || isBezel;
 
-  if (isGold) {
-    const t = Math.min(1, Math.max(0, (nx * 0.52 + ny * 0.48)));
-    const r = Math.round(253 - t * 55);
-    const g = Math.round(233 - t * 76);
-    const b = Math.round(162 - t * 108);
+  if (isBlue) {
+    // Crisp Royal Blue (#2563EB -> #1D4ED8 subtle depth)
+    const t = Math.min(1, Math.max(0, ny * 0.85));
+    const r = Math.round(37 - t * 8);
+    const g = Math.round(99 - t * 21);
+    const b = Math.round(235 - t * 19);
     return [r, g, b, 255];
   }
 
-  // Deep obsidian radial metallic surface
-  const dLight = Math.sqrt((nx - 0.3) * (nx - 0.3) + (ny - 0.22) * (ny - 0.22));
-  const base = Math.max(8, Math.round(38 - dLight * 34));
-  if (isInnerHairline) {
-    return [Math.min(255, base + 56), Math.min(255, base + 44), Math.min(255, base + 14), 255];
-  }
-  return [base, base, Math.min(255, base + 5), 255];
+  // Pure white surface (#FFFFFF)
+  return [255, 255, 255, 255];
 }
 
 function renderPng(size) {

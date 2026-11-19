@@ -78,6 +78,7 @@ export default function App() {
   const [downloads, setDownloads] = useState<DownloadTask[]>([]);
   const [conversions, setConversions] = useState<ConversionTask[]>([]);
   const [localEngineOnline, setLocalEngineOnline] = useState(false);
+  const [localEnginePackaged, setLocalEnginePackaged] = useState(false);
   const [chromeDefaultDir, setChromeDefaultDir] = useState('');
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<GitHubUpdateInfo | null>(null);
@@ -345,6 +346,7 @@ export default function App() {
       const res = await probeLocalEngine(config.chromeBridgePort);
       if (cancelled) return;
       setLocalEngineOnline(res.online);
+      setLocalEnginePackaged(Boolean(res.packaged));
       if (res.chromeDefaultDir) setChromeDefaultDir(res.chromeDefaultDir);
       if (typeof res.customSaveDir === 'string') {
         setConfig((prev) =>
@@ -625,11 +627,10 @@ export default function App() {
     setUpdateError(null);
     probeLocalEngine(config.chromeBridgePort).then((res) => {
       setLocalEngineOnline(res.online);
+      setLocalEnginePackaged(Boolean(res.packaged));
     });
-    if (config.autoCheckUpdate) {
-      handleCheckGitHubUpdate(true);
-    }
-  }, [config.autoCheckUpdate, config.chromeBridgePort, handleCheckGitHubUpdate]);
+    handleCheckGitHubUpdate(true);
+  }, [config.chromeBridgePort, handleCheckGitHubUpdate]);
 
   const handlePullLocalUpdate = useCallback(async () => {
     setUpdatingLocal(true);
@@ -1068,6 +1069,7 @@ export default function App() {
         onClose={() => setUpdateModalOpen(false)}
         config={config}
         localEngineOnline={localEngineOnline}
+        localEnginePackaged={localEnginePackaged}
         updateInfo={updateInfo}
         checking={checkingUpdate}
         checkError={updateError}
