@@ -1,0 +1,32 @@
+appId: com.joeldeskpro.app
+productName: Joel Desk Pro
+copyright: Copyright © 2026 Joel Desk Pro
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - electron/**/*
+  - build/icon.png
+  - build/icon.ico
+  - package.json
+asar: true
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: build/icon.ico
+  artifactName: Joel-Desk-Pro-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Joel Desk Pro
+  artifactName: Joel-Desk-Pro-Setup-${version}-x64.${ext}
+portable:
+  artifactName: Joel-Desk-Pro-Portable-${version}-x64.${ext}

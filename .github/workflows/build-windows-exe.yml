@@ -1,0 +1,76 @@
+name: Build Windows Desktop (.exe)
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional GitHub Release tag (e.g. v1.2.0). Leave blank to upload as Actions Artifact only.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install web dependencies
+        run: npm install
+
+      - name: Install Electron & electron-builder on Windows runner
+        run: npm install --no-save electron@33 electron-builder@25
+
+      - name: Generate Black & Gold J Windows icons
+        run: node scripts/generate-icons.mjs
+
+      - name: Build production web bundle for Electron
+        env:
+          ELECTRON_BUILD: 'true'
+        run: npm run build
+
+      - name: Package Windows Installer & Portable .exe
+        run: npx electron-builder --win nsis portable --x64 --config electron-builder.yml --publish never
+
+      - name: Upload Windows .exe as Workflow Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Joel-Desk-Pro-Windows-x64
+          path: |
+            release/Joel-Desk-Pro-Setup-*.exe
+            release/Joel-Desk-Pro-Portable-*.exe
+          if-no-files-found: error
+
+      - name: Publish GitHub Release (on tag push or manual release_tag)
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
+          name: Joel Desk Pro ${{ inputs.release_tag != '' && inputs.release_tag || github.ref_name }} (Windows)
+          body: |
+            ## Joel Desk Pro — Windows x64 Desktop Release
+
+            - **Setup Installer (`Joel-Desk-Pro-Setup-*-x64.exe`)**: Standard Windows installer with Desktop & Start Menu shortcuts.
+            - **Portable Edition (`Joel-Desk-Pro-Portable-*-x64.exe`)**: Single-file portable `.exe` — double-click and run directly, no installation required.
+
+            Built-in local multi-chunk download engine (`127.0.0.1:17890`), JoelDeskPro Chrome Extension bridge, and one-click Colab / Kaggle compute connectors are included automatically.
+          files: |
+            release/Joel-Desk-Pro-Setup-*.exe
+            release/Joel-Desk-Pro-Portable-*.exe
+          draft: false
+          prerelease: false

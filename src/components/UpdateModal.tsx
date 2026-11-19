@@ -167,6 +167,15 @@ export function UpdateModal({
                   </p>
                   <div className="flex flex-wrap items-center gap-3 pt-1 text-[11px]">
                     <a
+                      href={`https://github.com/${repo}/releases/latest`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 font-semibold text-[#0F172A] hover:text-[#2563EB] hover:underline"
+                    >
+                      <Download className="h-3 w-3 text-[#2563EB]" />
+                      {lang === 'zh' ? '下载 Windows .exe 安装包' : 'Download Windows .exe'}
+                    </a>
+                    <a
                       href={updateInfo.commitUrl}
                       target="_blank"
                       rel="noreferrer"
@@ -187,8 +196,17 @@ export function UpdateModal({
                   </div>
                 </div>
               ) : (
-                <div className="text-[12px] text-[#64748B]">
-                  {t.updateModal.clickCheckHint(repo)}
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-[#64748B]">
+                  <span>{t.updateModal.clickCheckHint(repo)}</span>
+                  <a
+                    href={`https://github.com/${repo}/releases/latest`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 font-medium text-[#2563EB] hover:underline whitespace-nowrap"
+                  >
+                    <Download className="h-3 w-3" />
+                    {lang === 'zh' ? 'Windows .exe 发布页' : 'Windows .exe Releases'}
+                  </a>
                 </div>
               )}
             </div>
