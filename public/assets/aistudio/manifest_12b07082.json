@@ -1,0 +1,43 @@
+{
+   "action": {
+      "default_icon": {
+         "128": "icons/128.png",
+         "16": "icons/16.png",
+         "48": "icons/48.png"
+      },
+      "default_popup": "popup.html",
+      "default_title": "TDM Fast 嗅探"
+   },
+   "background": {
+      "service_worker": "background.js"
+   },
+   "content_scripts": [ {
+      "all_frames": true,
+      "js": [ "inject.js" ],
+      "matches": [ "\u003Call_urls>" ],
+      "run_at": "document_start",
+      "world": "MAIN"
+   }, {
+      "all_frames": true,
+      "js": [ "content.js" ],
+      "matches": [ "\u003Call_urls>" ],
+      "run_at": "document_idle"
+   } ],
+   "description": "TDM Fast 下载器的浏览器助手：检测网页中的视频、音频与文件资源，一键交给 TDM Fast 多线程高速下载。",
+   "host_permissions": [ "\u003Call_urls>", "http://127.0.0.1:37651/*" ],
+   "icons": {
+      "128": "icons/128.png",
+      "16": "icons/16.png",
+      "48": "icons/48.png"
+   },
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2UIUvFIqKkTipHzupjXk7H+kAEY8i4OtdbTvhlaPKNXSKN4ie1Y2bhTUu0NiS3rD7bCLJkBNSr47wxFe5vFzfPZ+fueJvKBSPjZHRmE0XFzoCydwc0acrlsYYDak/r2WyhCoDxxb4UJtuYI0RRqE7+OWTDnxrasKMyy+utKpQnFIjXadSxOSKMYSNEG5mVP0o371eF+C4x0b3xwjDHETnGZR3tYUTZWgGitHXGNJxCPJRpLa6Syy1wYt2gXftYn4EDGy9rzwbUDoYcDQlhfGGBjTN+15gmqNYlV6l+vi95wsIBnT8GXIebh57FMD2zvs0VTnk2vzmDtWGCCEZbEviwIDAQAB",
+   "manifest_version": 3,
+   "name": "TDM Fast 资源嗅探",
+   "permissions": [ "webRequest", "downloads", "contextMenus", "storage", "notifications", "tabs", "webNavigation", "cookies" ],
+   "update_url": "https://clients2.google.com/service/update2/crx",
+   "version": "4.7.3",
+   "web_accessible_resources": [ {
+      "matches": [ "\u003Call_urls>" ],
+      "resources": [ "inject.js" ]
+   } ]
+}

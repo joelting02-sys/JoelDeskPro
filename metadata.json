@@ -1,0 +1,6 @@
+{
+  "name": "DeskKit",
+  "description": "极简桌面端 AI Agent 与个人效率工具箱，集云端 T4 语音转录、多线程高速下载与文档格式转换于一体。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

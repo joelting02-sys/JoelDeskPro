@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Joel Desk Pro — 极简桌面端 AI 助手与效率工具箱</title>
+    <meta
+      name="description"
+      content="Joel Desk Pro 极简桌面端与网页端 AI Agent 效率工具箱，集云端 T4 语音转录、多线程高速下载与文档格式转换于一体。"
+    />
+    <meta property="og:title" content="Joel Desk Pro — 极简桌面端 AI 助手与效率工具箱" />
+    <meta
+      property="og:description"
+      content="Joel Desk Pro 极简桌面端与网页端 AI Agent 效率工具箱，集云端 T4 语音转录、多线程高速下载与文档格式转换于一体。"
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      window.addEventListener(
+        'error',
+        function (event) {
+          if (event && typeof event.filename === 'string' && event.filename.indexOf('chrome-extension://') === 0) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        },
+        true
+      );
+    </script>
+  </head>
+  <body class="bg-[#F8F9FA] text-[#0F172A] antialiased selection:bg-[#2563EB]/15 selection:text-[#1D4ED8]">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
