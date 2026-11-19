@@ -14,6 +14,7 @@ import {
   Link2,
   Pause,
   Play,
+  RotateCcw,
   ShieldCheck,
   Trash2,
   X,
@@ -28,27 +29,23 @@ import {
 } from '../types/toolkit';
 import {
   buildDeskKitChromeExtension,
-  buildLocalEngineScript,
   detectDownloadEngine,
   detectFileCategory,
   extractCleanUrl,
   getFormatMenuGroups,
   mediaQualityLabel,
   triggerClientBlobDownload,
-  triggerClientFileDownload,
 } from '../services/toolkitAdapter';
-import { DirectoryHandleLike } from '../services/webRangeDownloader';
 import { AppLanguage, TRANSLATIONS } from '../i18n';
 
 interface DownloadViewProps {
   lang: AppLanguage;
   tasks: DownloadTask[];
   config: EndpointConfig;
-  chromeConnected: boolean;
   localEngineOnline: boolean;
-  hasRealDirHandle: boolean;
-  onConnectChrome: () => void;
-  onSelectDirectoryHandle: (handle: DirectoryHandleLike | null) => void;
+  chromeDefaultDir: string;
+  onCheckClient: () => void;
+  onPickFolder: () => Promise<boolean>;
   onChangeSaveDir: (dir: string) => void;
   onCreateDownload: (params: {
     rawInput: string;
@@ -76,11 +73,10 @@ export function DownloadView({
   lang,
   tasks,
   config,
-  chromeConnected,
   localEngineOnline,
-  hasRealDirHandle,
-  onConnectChrome,
-  onSelectDirectoryHandle,
+  chromeDefaultDir,
+  onCheckClient,
+  onPickFolder,
   onChangeSaveDir,
   onCreateDownload,
   onSendToTranscribe,
@@ -93,7 +89,7 @@ export function DownloadView({
   const [rawInput, setRawInput] = useState('');
   const [threads, setThreads] = useState<ThreadCount>(config.defaultThreads);
   const [filter, setFilter] = useState<DownloadFilter>('all');
-  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  const [customPathOpen, setCustomPathOpen] = useState(false);
   const [customDirDraft, setCustomDirDraft] = useState(config.defaultSaveDir);
   const [convertMenuTaskId, setConvertMenuTaskId] = useState<string | null>(null);
   const [pluginModalOpen, setPluginModalOpen] = useState(false);
@@ -101,26 +97,20 @@ export function DownloadView({
   const folderPopoverRef = useRef<HTMLDivElement>(null);
   const convertMenuRef = useRef<HTMLDivElement>(null);
 
-  const presetSaveDirs = useMemo(
-    () => [
-      { label: t.download.presetDirs.defaultDownloads, path: 'C:\\Users\\Downloads\\JoelDeskPro' },
-      { label: t.download.presetDirs.desktopVideos, path: 'C:\\Users\\Desktop\\Videos' },
-      { label: t.download.presetDirs.mediaLibrary, path: 'D:\\Media\\Downloads' },
-      { label: t.download.presetDirs.macDownloads, path: '~/Downloads/JoelDeskPro' },
-    ],
-    [t]
-  );
+  const hasCustomDir = Boolean(config.defaultSaveDir.trim());
+  const effectiveDisplayDir = hasCustomDir
+    ? config.defaultSaveDir.trim()
+    : chromeDefaultDir || t.download.chromeDefaultLabel;
 
   useEffect(() => {
     setCustomDirDraft(config.defaultSaveDir);
   }, [config.defaultSaveDir]);
 
-  // Close popovers cleanly on outside click
   useEffect(() => {
     const onPointerDown = (e: MouseEvent) => {
       const target = e.target as Node;
       if (folderPopoverRef.current && !folderPopoverRef.current.contains(target)) {
-        setFolderPickerOpen(false);
+        setCustomPathOpen(false);
       }
       if (convertMenuRef.current && !convertMenuRef.current.contains(target)) {
         setConvertMenuTaskId(null);
@@ -136,17 +126,9 @@ export function DownloadView({
     [extracted.cleanUrl]
   );
 
-  const currentWebUrl =
-    typeof window !== 'undefined' ? `${window.location.origin}${window.location.pathname}` : '';
-
   const extensionFiles = useMemo(
-    () =>
-      buildDeskKitChromeExtension(
-        config.chromeBridgePort,
-        config.chromeBridgeToken,
-        currentWebUrl
-      ),
-    [config.chromeBridgePort, config.chromeBridgeToken, currentWebUrl]
+    () => buildDeskKitChromeExtension(config.chromeBridgePort, config.chromeBridgeToken, ''),
+    [config.chromeBridgePort, config.chromeBridgeToken]
   );
 
   const filteredTasks = useMemo(() => {
@@ -170,7 +152,7 @@ export function DownloadView({
       rawInput: rawInput.trim(),
       cleanUrl: extracted.cleanUrl,
       fileName: extracted.fileName,
-      saveDir: config.defaultSaveDir,
+      saveDir: config.defaultSaveDir.trim(),
       engine: autoEngine,
       threads,
       mediaQuality: autoEngine === 'ytdlp' ? 'best' : undefined,
@@ -179,51 +161,23 @@ export function DownloadView({
     setRawInput('');
   };
 
-  const handlePickNativeDirectory = async () => {
-    const win = window as Window & {
-      showDirectoryPicker?: (opts?: { mode?: 'read' | 'readwrite' }) => Promise<DirectoryHandleLike>;
-    };
-    if (typeof win.showDirectoryPicker === 'function') {
-      try {
-        const handle = await win.showDirectoryPicker({ mode: 'readwrite' });
-        if (handle?.name) {
-          onSelectDirectoryHandle(handle);
-          setFolderPickerOpen(false);
-          return;
-        }
-      } catch {
-        // Sandboxed iframe or user cancelled -> smoothly open local path selector
-      }
+  const handleChooseFolderClick = async () => {
+    const pickedNatively = await onPickFolder();
+    if (!pickedNatively) {
+      setCustomPathOpen((prev) => !prev);
+    } else {
+      setCustomPathOpen(false);
     }
-    setFolderPickerOpen((prev) => !prev);
-  };
-
-  const handleJumpToExtension = () => {
-    onConnectChrome();
-    setPluginModalOpen(true);
   };
 
   const handleExportExtensionBundle = () => {
     triggerClientBlobDownload('joeldeskpro-chrome-extension.zip', extensionFiles.zipBlob());
   };
 
-  const handleExportLocalEngine = () => {
-    const script = buildLocalEngineScript(
-      config.chromeBridgePort,
-      config.chromeBridgeToken,
-      config.defaultSaveDir
-    );
-    triggerClientFileDownload(
-      'joeldeskpro-local-engine.mjs',
-      script,
-      'application/javascript;charset=utf-8'
-    );
-  };
-
   return (
     <div className="h-full overflow-y-auto bg-[#F8F9FA] px-5 py-6 sm:px-8">
       <div className="mx-auto max-w-[1040px] space-y-5">
-        {/* Top Smart URL & Local Save Folder Bar */}
+        {/* Top Smart URL & Save Folder Bar */}
         <section className="rounded-panel border border-[#E5E7EB] bg-white p-5">
           <form onSubmit={handleSubmit}>
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -287,100 +241,74 @@ export function DownloadView({
               </div>
             )}
 
-            {/* Local Save Directory Row */}
+            {/* Minimal Save Directory Row (Defaults to Chrome's Download Folder) */}
             <div className="mt-3.5 flex flex-wrap items-center justify-between gap-3 border-t border-[#F1F5F9] pt-3">
-              <div className="relative flex min-w-0 flex-1 items-center gap-2" ref={folderPopoverRef}>
+              <div className="relative flex min-w-0 flex-1 flex-wrap items-center gap-2" ref={folderPopoverRef}>
                 <Folder className="h-4 w-4 shrink-0 text-[#64748B]" />
                 <span className="shrink-0 text-[12px] text-[#64748B]">{t.download.saveTo}</span>
                 <button
                   type="button"
-                  onClick={() => setFolderPickerOpen((prev) => !prev)}
-                  className="flex min-w-0 max-w-[380px] items-center gap-1.5 rounded-inner bg-[#F8F9FA] px-2.5 py-1 font-mono text-[12px] text-[#0F172A] hover:bg-[#F1F5F9] transition-colors"
+                  onClick={() => setCustomPathOpen((prev) => !prev)}
+                  className="flex min-w-0 max-w-[420px] items-center gap-1.5 rounded-inner bg-[#F8F9FA] px-2.5 py-1 font-mono text-[12px] text-[#0F172A] hover:bg-[#F1F5F9] transition-colors"
                   title={t.download.switchDirTitle}
                 >
-                  <span className="truncate">{config.defaultSaveDir}</span>
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#64748B]" />
+                  <span className="truncate">{effectiveDisplayDir}</span>
                 </button>
 
                 <button
                   type="button"
-                  onClick={handlePickNativeDirectory}
+                  onClick={handleChooseFolderClick}
                   className="inline-flex shrink-0 items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1 text-[12px] font-medium text-[#0F172A] hover:bg-[#F8F9FA] whitespace-nowrap"
                 >
                   <FolderOpen className="h-3.5 w-3.5 text-[#2563EB]" />
-                  {hasRealDirHandle ? t.download.dirAuthorizedBtn : t.download.chooseFolderBtn}
+                  {t.download.chooseFolderBtn}
                 </button>
 
-                {/* Folder Picker Popover */}
-                {folderPickerOpen && (
+                {hasCustomDir && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChangeSaveDir('');
+                      setCustomPathOpen(false);
+                    }}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-control px-2 py-1 text-[12px] text-[#64748B] hover:bg-[#F3F4F6] hover:text-[#0F172A] whitespace-nowrap"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    {t.download.resetChromeDefault}
+                  </button>
+                )}
+
+                {/* Minimal Custom Path Input Popover (No fake presets) */}
+                {customPathOpen && (
                   <div className="absolute left-0 top-full z-30 mt-2 w-[360px] max-w-[calc(100vw-3rem)] rounded-panel border border-[#E5E7EB] bg-white p-3.5 shadow-lg">
-                    <div className="mb-2 text-[12px] font-semibold text-[#0F172A]">
-                      {t.download.chooseLocalFolderTitle}
-                    </div>
-
-                    <div className="space-y-1">
-                      {presetSaveDirs.map((item) => {
-                        const isSelected = config.defaultSaveDir === item.path;
-                        return (
-                          <button
-                            key={item.path}
-                            type="button"
-                            onClick={() => {
-                              onChangeSaveDir(item.path);
-                              setFolderPickerOpen(false);
-                            }}
-                            className={`flex w-full items-center justify-between gap-2 rounded-control px-3 py-2 text-left transition-colors ${
-                              isSelected
-                                ? 'bg-[#2563EB]/8 text-[#2563EB]'
-                                : 'text-[#0F172A] hover:bg-[#F8F9FA]'
-                            }`}
-                          >
-                            <div className="min-w-0">
-                              <div className="text-[12px] font-medium">{item.label}</div>
-                              <div className="truncate font-mono text-[11px] text-[#64748B]">
-                                {item.path}
-                              </div>
-                            </div>
-                            {isSelected && <Check className="h-3.5 w-3.5 shrink-0 text-[#2563EB]" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="mt-3 border-t border-[#E5E7EB] pt-3">
-                      <label className="mb-1.5 block text-[11px] font-medium text-[#64748B]">
-                        {t.download.customPathLabel}
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={customDirDraft}
-                          onChange={(e) => setCustomDirDraft(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              if (customDirDraft.trim()) {
-                                onChangeSaveDir(customDirDraft.trim());
-                                setFolderPickerOpen(false);
-                              }
-                            }
-                          }}
-                          placeholder={t.download.customPathPlaceholder}
-                          className="h-8 flex-1 rounded-inner border border-[#E5E7EB] bg-[#F8F9FA] px-2.5 font-mono text-[12px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (customDirDraft.trim()) {
-                              onChangeSaveDir(customDirDraft.trim());
-                              setFolderPickerOpen(false);
-                            }
-                          }}
-                          className="h-8 rounded-inner bg-[#2563EB] px-3 text-[12px] font-medium text-white hover:bg-[#1D4ED8] whitespace-nowrap"
-                        >
-                          {t.download.confirm}
-                        </button>
-                      </div>
+                    <label className="mb-1.5 block text-[11px] font-medium text-[#64748B]">
+                      {t.download.customPathLabel}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={customDirDraft}
+                        onChange={(e) => setCustomDirDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            onChangeSaveDir(customDirDraft.trim());
+                            setCustomPathOpen(false);
+                          }
+                        }}
+                        placeholder={chromeDefaultDir || t.download.customPathPlaceholder}
+                        className="h-8 flex-1 rounded-inner border border-[#E5E7EB] bg-[#F8F9FA] px-2.5 font-mono text-[12px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onChangeSaveDir(customDirDraft.trim());
+                          setCustomPathOpen(false);
+                        }}
+                        className="h-8 rounded-inner bg-[#2563EB] px-3 text-[12px] font-medium text-white hover:bg-[#1D4ED8] whitespace-nowrap"
+                      >
+                        {t.download.confirm}
+                      </button>
                     </div>
                   </div>
                 )}
@@ -389,7 +317,7 @@ export function DownloadView({
           </form>
         </section>
 
-        {/* Direct One-Click JoelDeskPro Plugin Bar */}
+        {/* Direct Desktop Client + Chrome Extension Bar */}
         <section className="flex flex-wrap items-center justify-between gap-3 rounded-panel border border-[#E5E7EB] bg-white px-5 py-3.5">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-[#F3F4F6] text-[#2563EB]">
@@ -403,16 +331,12 @@ export function DownloadView({
                 <span aria-hidden="true" className="text-[#CBD5E1]">·</span>
                 <span
                   className={`text-[12px] font-medium ${
-                    chromeConnected || localEngineOnline ? 'text-[#16A34A]' : 'text-[#64748B]'
+                    localEngineOnline ? 'text-[#16A34A]' : 'text-[#64748B]'
                   }`}
                 >
-                  {chromeConnected && localEngineOnline
-                    ? t.download.statusDual
-                    : chromeConnected
-                      ? t.download.statusWeb
-                      : localEngineOnline
-                        ? t.download.statusLocal
-                        : t.download.statusReady}
+                  {localEngineOnline
+                    ? t.download.statusClientOnline
+                    : t.download.statusClientOffline}
                 </span>
               </div>
               <p className="mt-0.5 text-[12px] text-[#64748B]">{t.download.pluginDesc}</p>
@@ -422,14 +346,17 @@ export function DownloadView({
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={handleJumpToExtension}
+              onClick={() => {
+                onCheckClient();
+                setPluginModalOpen(true);
+              }}
               className={`inline-flex items-center gap-1.5 rounded-control px-3.5 py-2 text-[12px] font-medium transition-colors whitespace-nowrap ${
-                chromeConnected
+                localEngineOnline
                   ? 'bg-[#0F172A] text-white hover:bg-[#1E293B]'
                   : 'bg-[#2563EB] text-white hover:bg-[#1D4ED8]'
               }`}
             >
-              {chromeConnected ? (
+              {localEngineOnline ? (
                 <>
                   <Check className="h-3.5 w-3.5 text-[#4ADE80]" />
                   <span>{t.download.openPluginSettings}</span>
@@ -444,7 +371,7 @@ export function DownloadView({
           </div>
         </section>
 
-        {/* Task List (no overflow-hidden so the Convert Format dropdown is never clipped) */}
+        {/* Task List */}
         <section className="rounded-panel border border-[#E5E7EB] bg-white">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E5E7EB] px-5 py-3">
             <div className="inline-flex items-center gap-1 rounded-control bg-[#F3F4F6] p-1">
@@ -495,7 +422,12 @@ export function DownloadView({
           ) : (
             <div className="divide-y divide-[#E5E7EB]">
               {filteredTasks.map((task) => {
-                const percent = Math.min(100, Math.round((task.downloadedMB / task.totalMB) * 100));
+                const percent =
+                  task.totalMB > 0
+                    ? Math.min(100, Math.round((task.downloadedMB / task.totalMB) * 100))
+                    : task.status === 'completed'
+                      ? 100
+                      : 0;
                 const isCompleted = task.status === 'completed';
                 const isPaused = task.status === 'paused';
                 const fileCategory = detectFileCategory(task.fileName);
@@ -540,9 +472,11 @@ export function DownloadView({
                             {task.downloadedMB.toFixed(1)} MB / {task.totalMB.toFixed(1)} MB
                           </span>
                           <span aria-hidden="true">·</span>
-                          <span className="inline-flex max-w-[220px] items-center gap-1 truncate font-mono text-[#64748B]">
+                          <span className="inline-flex max-w-[260px] items-center gap-1 truncate font-mono text-[#64748B]">
                             <Folder className="h-3 w-3 shrink-0 text-[#94A3B8]" />
-                            <span className="truncate">{task.saveDir}</span>
+                            <span className="truncate">
+                              {task.saveDir || chromeDefaultDir || t.download.chromeDefaultLabel}
+                            </span>
                           </span>
                           <span aria-hidden="true">·</span>
                           {isCompleted ? (
@@ -725,14 +659,14 @@ export function DownloadView({
         </section>
       </div>
 
-      {/* Clean JoelDeskPro Plugin Settings Modal */}
+      {/* Clean JoelDeskPro Chrome Extension Setup Modal (Desktop Client Only) */}
       {pluginModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-[2px]"
           onClick={() => setPluginModalOpen(false)}
         >
           <div
-            className="w-full max-w-[580px] overflow-hidden rounded-panel border border-[#E5E7EB] bg-white shadow-xl"
+            className="w-full max-w-[540px] overflow-hidden rounded-panel border border-[#E5E7EB] bg-white shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -742,7 +676,7 @@ export function DownloadView({
                   {t.download.pluginModal.title}
                 </h2>
                 <p className="mt-0.5 text-[12px] text-[#64748B]">
-                  {t.download.pluginModal.subtitle(config.defaultSaveDir)}
+                  {t.download.pluginModal.subtitle(effectiveDisplayDir)}
                 </p>
               </div>
               <button
@@ -756,46 +690,24 @@ export function DownloadView({
             </div>
 
             <div className="space-y-4 p-5">
-              {/* Dual-Channel Status Overview */}
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                <div className="rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-4 py-3">
-                  <div className="flex items-center justify-between text-[12px]">
-                    <span className="font-medium text-[#0F172A]">
-                      {t.download.pluginModal.webChannel}
-                    </span>
-                    <span
-                      className={`font-medium ${
-                        chromeConnected ? 'text-[#16A34A]' : 'text-[#64748B]'
-                      }`}
-                    >
-                      {chromeConnected
-                        ? t.download.pluginModal.webConnected
-                        : t.download.pluginModal.webWaiting}
-                    </span>
-                  </div>
-                  <div className="mt-1 truncate font-mono text-[11px] text-[#64748B]">
-                    {t.download.pluginModal.webNote}
-                  </div>
+              {/* Single Desktop Client Bridge Status */}
+              <div className="rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-4 py-3">
+                <div className="flex items-center justify-between text-[12px]">
+                  <span className="font-medium text-[#0F172A]">
+                    {t.download.pluginModal.localChannel}
+                  </span>
+                  <span
+                    className={`font-medium ${
+                      localEngineOnline ? 'text-[#16A34A]' : 'text-[#64748B]'
+                    }`}
+                  >
+                    {localEngineOnline
+                      ? t.download.pluginModal.localOnline
+                      : t.download.pluginModal.localOffline}
+                  </span>
                 </div>
-
-                <div className="rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-4 py-3">
-                  <div className="flex items-center justify-between text-[12px]">
-                    <span className="font-medium text-[#0F172A]">
-                      {t.download.pluginModal.localChannel}
-                    </span>
-                    <span
-                      className={`font-medium ${
-                        localEngineOnline ? 'text-[#16A34A]' : 'text-[#64748B]'
-                      }`}
-                    >
-                      {localEngineOnline
-                        ? t.download.pluginModal.localOnline
-                        : t.download.pluginModal.localOptional}
-                    </span>
-                  </div>
-                  <div className="mt-1 truncate font-mono text-[11px] text-[#64748B]">
-                    127.0.0.1:{config.chromeBridgePort}
-                  </div>
+                <div className="mt-1 truncate font-mono text-[11px] text-[#64748B]">
+                  http://127.0.0.1:{config.chromeBridgePort}
                 </div>
               </div>
 
@@ -812,15 +724,6 @@ export function DownloadView({
                   </button>
                   <button
                     type="button"
-                    onClick={handleExportLocalEngine}
-                    className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-2 text-[12px] font-medium text-[#0F172A] hover:border-[#2563EB] hover:text-[#2563EB] whitespace-nowrap"
-                    title={t.download.pluginModal.localEngineTooltip}
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    {t.download.pluginModal.downloadLocalEngine}
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => onCopyText('chrome://extensions', t.toasts.chromeExtUrlLabel)}
                     className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-2 text-[12px] font-medium text-[#475569] hover:text-[#0F172A] whitespace-nowrap"
                   >
@@ -829,17 +732,11 @@ export function DownloadView({
                   </button>
                   <button
                     type="button"
-                    onClick={onConnectChrome}
+                    onClick={onCheckClient}
                     className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-2 text-[12px] font-medium text-[#0F172A] hover:border-[#2563EB] hover:text-[#2563EB] whitespace-nowrap"
                   >
-                    {chromeConnected ? (
-                      <>
-                        <Check className="h-3.5 w-3.5 text-[#16A34A]" />
-                        {t.download.pluginModal.rehandshake}
-                      </>
-                    ) : (
-                      <span>{t.download.pluginModal.testConnection}</span>
-                    )}
+                    {localEngineOnline && <Check className="h-3.5 w-3.5 text-[#16A34A]" />}
+                    <span>{t.download.pluginModal.testConnection}</span>
                   </button>
                 </div>
 

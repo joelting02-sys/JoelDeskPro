@@ -184,24 +184,16 @@ export interface Translations {
     validLink: string;
     invalidLink: string;
     saveTo: string;
+    chromeDefaultLabel: string;
+    resetChromeDefault: string;
     switchDirTitle: string;
-    dirAuthorizedBtn: string;
     chooseFolderBtn: string;
-    chooseLocalFolderTitle: string;
     customPathLabel: string;
     customPathPlaceholder: string;
     confirm: string;
-    presetDirs: {
-      defaultDownloads: string;
-      desktopVideos: string;
-      mediaLibrary: string;
-      macDownloads: string;
-    };
     pluginTitle: string;
-    statusDual: string;
-    statusWeb: string;
-    statusLocal: string;
-    statusReady: string;
+    statusClientOnline: string;
+    statusClientOffline: string;
     pluginDesc: string;
     openPluginSettings: string;
     configurePlugin: string;
@@ -227,18 +219,11 @@ export interface Translations {
       title: string;
       subtitle: (dir: string) => string;
       close: string;
-      webChannel: string;
-      webConnected: string;
-      webWaiting: string;
-      webNote: string;
       localChannel: string;
       localOnline: string;
-      localOptional: string;
+      localOffline: string;
       downloadExtZip: string;
-      downloadLocalEngine: string;
-      localEngineTooltip: string;
       copyExtensionsUrl: string;
-      rehandshake: string;
       testConnection: string;
       step1Prefix: string;
       step1Suffix: string;
@@ -513,44 +498,36 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
     },
     download: {
       inputPlaceholder:
-        'Paste direct link, YouTube / Douyin URL, or share text — auto-picks fastest multi-chunk mode…',
+        'Paste direct link, YouTube / Douyin URL, or share text — multi-chunk download to desktop…',
       threadsUnit: (count) => `${count}T`,
       startDownload: 'Download',
       filteredNoise: 'Noise stripped',
       validLink: 'Valid URL',
       invalidLink: 'No valid http:// or https:// URL detected',
       saveTo: 'Save to',
-      switchDirTitle: 'Click to change local download folder',
-      dirAuthorizedBtn: 'Folder Authorized',
+      chromeDefaultLabel: 'Chrome Default Downloads',
+      resetChromeDefault: 'Use Chrome Default',
+      switchDirTitle: 'Click to set a custom folder path',
       chooseFolderBtn: 'Choose Folder',
-      chooseLocalFolderTitle: 'Select Local Save Folder',
-      customPathLabel: 'Custom local path',
-      customPathPlaceholder: 'e.g. D:\\Videos\\Downloads',
+      customPathLabel: 'Custom folder path (leave empty for Chrome Default)',
+      customPathPlaceholder: 'e.g. D:\\Downloads',
       confirm: 'Apply',
-      presetDirs: {
-        defaultDownloads: 'Default Downloads',
-        desktopVideos: 'Desktop Videos',
-        mediaLibrary: 'D: Media Library',
-        macDownloads: 'macOS Downloads',
-      },
-      pluginTitle: 'JoelDeskPro Extension',
-      statusDual: 'Connected (Web + Local Engine)',
-      statusWeb: 'Connected to Web App',
-      statusLocal: 'Local Engine Online',
-      statusReady: 'Web ready · Install extension for site-wide sniffing',
+      pluginTitle: 'JoelDeskPro Chrome Extension',
+      statusClientOnline: 'Desktop Client Online',
+      statusClientOffline: 'Desktop Client Offline',
       pluginDesc:
-        'Dual-channel bridge for Web & Local client — hover over any YouTube, Douyin, or Bilibili video to download.',
+        'Pairs with Joel Desk Pro desktop client — hover over any YouTube, Douyin, or Bilibili video to download directly.',
       openPluginSettings: 'Extension Settings',
-      configurePlugin: 'Setup JoelDeskPro Extension',
+      configurePlugin: 'Setup Chrome Extension',
       filterAll: (n) => `All (${n})`,
       filterActive: (n) => `Active (${n})`,
       filterCompleted: (n) => `Completed (${n})`,
       totalSpeed: 'Total Speed',
-      emptyList: 'No download tasks yet. Paste a link above or capture from the browser extension.',
+      emptyList: 'No download tasks yet. Paste a link above or capture from the Chrome extension.',
       fromExtension: 'From Extension',
       cookiesSynced: 'Session Synced',
       chunksMeta: (threads, chunks) => `${threads} threads · ${chunks} chunks`,
-      savedLocally: 'Saved locally',
+      savedLocally: 'Saved',
       paused: 'Paused',
       sendToTranscribe: 'Transcribe',
       convertFormat: 'Convert',
@@ -561,23 +538,15 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       deleteTask: 'Remove task',
       chunksProgressTitle: (chunks) => `${chunks} concurrent download chunks`,
       pluginModal: {
-        title: 'JoelDeskPro Extension Settings',
-        subtitle: (dir) => `Web + Local dual-channel bridge · Saving to ${dir}`,
+        title: 'JoelDeskPro Chrome Extension',
+        subtitle: (dir) => `Desktop client bridge · Saving to ${dir}`,
         close: 'Close modal',
-        webChannel: 'Web Channel',
-        webConnected: 'Connected',
-        webWaiting: 'Not Installed',
-        webNote: 'Auto-registers your live web app URL — no local install required',
-        localChannel: 'Local Engine Channel',
+        localChannel: 'Desktop Client Bridge',
         localOnline: 'Online',
-        localOptional: 'Optional / Offline',
+        localOffline: 'Offline (Launch Desktop Client)',
         downloadExtZip: 'Download JoelDeskPro (.zip)',
-        downloadLocalEngine: 'Local Engine (.mjs · Optional)',
-        localEngineTooltip:
-          'Optional: Run node joeldeskpro-local-engine.mjs locally for direct disk writing & yt-dlp',
         copyExtensionsUrl: 'Copy chrome://extensions',
-        rehandshake: 'Reconnect',
-        testConnection: 'Test Connection',
+        testConnection: 'Check Client Connection',
         step1Prefix: 'Unzip ',
         step1Suffix: ' (manifest.json is at root)',
         step2Prefix: 'Enable ',
@@ -682,15 +651,15 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
         'Local engine online: click below to run git pull + npm install + npm run build (works with private repos via local Git auth).',
       pullOfflineDesc:
         'Run a one-click update script on your computer (uses your local Git login — works even when the repo is private).',
-      modeLocalOnline: 'Local Engine Online',
-      modeWeb: 'Web Mode',
+      modeLocalOnline: 'Desktop Client Online',
+      modeWeb: 'Client Offline',
       pullingLocal: 'Pulling & building…',
       pullNowBtn: 'Pull Update via Local Git',
       winScriptPrimary: 'Windows Update Script (.bat)',
       winScriptSecondary: 'Windows (.bat)',
       unixScript: 'macOS / Linux (.sh)',
       copyPullCmd: 'Copy git pull Command',
-      reloadWebSync: 'Mark Synced & Reload',
+      reloadWebSync: 'Reload Client',
       hideLog: 'Hide log',
       viewLog: 'View log',
     },
@@ -853,43 +822,35 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       },
     },
     download: {
-      inputPlaceholder: '粘贴直链、抖音 / YouTube 链接或带杂字的分享文案，自动选最快方式分片下载…',
+      inputPlaceholder: '粘贴直链、抖音 / YouTube 链接或带杂字的分享文案，由客户端多线程分片下载…',
       threadsUnit: (count) => `${count} 线程`,
       startDownload: '开始下载',
       filteredNoise: '已自动过滤杂字',
       validLink: '有效链接',
       invalidLink: '未检测到以 http:// 或 https:// 开头的有效下载链接',
       saveTo: '保存到',
-      switchDirTitle: '点击切换本地保存目录',
-      dirAuthorizedBtn: '已授权直写文件夹',
+      chromeDefaultLabel: 'Chrome 默认下载文件夹',
+      resetChromeDefault: '恢复 Chrome 默认',
+      switchDirTitle: '点击修改保存目录',
       chooseFolderBtn: '选择文件夹',
-      chooseLocalFolderTitle: '选择本地保存文件夹',
-      customPathLabel: '自定义本机路径',
-      customPathPlaceholder: '例如 D:\\Videos\\Downloads',
+      customPathLabel: '自定义路径（留空则一律使用 Chrome 默认下载目录）',
+      customPathPlaceholder: '例如 D:\\Downloads',
       confirm: '确定',
-      presetDirs: {
-        defaultDownloads: '默认下载目录',
-        desktopVideos: '桌面视频文件夹',
-        mediaLibrary: 'D 盘媒体素材库',
-        macDownloads: 'macOS 下载目录',
-      },
-      pluginTitle: 'JoelDeskPro 插件',
-      statusDual: '已连接（网页端 + 本地引擎）',
-      statusWeb: '已直连当前网页端',
-      statusLocal: '本地高速引擎在线',
-      statusReady: '网页端可直用 · 安装插件解锁全站嗅探',
-      pluginDesc: '支持网页端与本地客户端双通道，刷 YouTube、抖音、B 站时在视频右上角一键下载',
-      openPluginSettings: '打开插件设置',
-      configurePlugin: '配置 JoelDeskPro 插件',
+      pluginTitle: 'JoelDeskPro Chrome 插件',
+      statusClientOnline: '桌面客户端已连接',
+      statusClientOffline: '桌面客户端未运行',
+      pluginDesc: '与桌面客户端直连配合，刷 YouTube、抖音、B 站时在视频右上角一键高速下载',
+      openPluginSettings: '插件设置',
+      configurePlugin: '安装 Chrome 插件',
       filterAll: (n) => `全部 (${n})`,
       filterActive: (n) => `下载中 (${n})`,
       filterCompleted: (n) => `已完成 (${n})`,
       totalSpeed: '总速率',
-      emptyList: '暂无下载任务，粘贴链接或通过浏览器插件捕获即可开始',
+      emptyList: '暂无下载任务，粘贴链接或通过 Chrome 插件捕获即可开始',
       fromExtension: '来自 Chrome 插件',
       cookiesSynced: '已同步登录态',
       chunksMeta: (threads, chunks) => `${threads} 线程 · ${chunks} 分片并发`,
-      savedLocally: '已保存到本地',
+      savedLocally: '已保存',
       paused: '已暂停',
       sendToTranscribe: '送去转录',
       convertFormat: '转换格式',
@@ -900,22 +861,15 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       deleteTask: '移除任务',
       chunksProgressTitle: (chunks) => `${chunks} 个分片并发下载进度`,
       pluginModal: {
-        title: 'JoelDeskPro 插件设置',
-        subtitle: (dir) => `支持网页端直接用与本地客户端双通道 · 默认保存至 ${dir}`,
+        title: 'JoelDeskPro Chrome 插件',
+        subtitle: (dir) => `桌面客户端直连通道 · 当前保存至 ${dir}`,
         close: '关闭窗口',
-        webChannel: '网页端通道',
-        webConnected: '已直连',
-        webWaiting: '等待安装',
-        webNote: '发布后免装客户端，自动注册当前网址',
-        localChannel: '本地引擎通道',
+        localChannel: '桌面客户端连接状态',
         localOnline: '在线',
-        localOptional: '可选未启动',
+        localOffline: '未连接（请打开桌面客户端）',
         downloadExtZip: '下载 JoelDeskPro 插件 (.zip)',
-        downloadLocalEngine: '本地引擎 (.mjs · 可选)',
-        localEngineTooltip: '可选：本机运行 node joeldeskpro-local-engine.mjs 解锁无限硬盘直写与 yt-dlp',
         copyExtensionsUrl: '复制 chrome://extensions',
-        rehandshake: '重新握手',
-        testConnection: '检测连接',
+        testConnection: '检测客户端连接',
         step1Prefix: '解压 ',
         step1Suffix: '（首层即含 manifest.json）',
         step2Prefix: '扩展页右上角开 ',
@@ -1018,15 +972,15 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
         '本地引擎在线：点击下方按钮自动执行 git pull + npm run build（私有仓库只要本机 Git 已登录即可直拉）。',
       pullOfflineDesc:
         '下载一键更新脚本或复制命令到终端运行，直接走本机 Git 凭据拉取（私有仓库可用）。',
-      modeLocalOnline: '本地引擎在线',
-      modeWeb: '网页端模式',
+      modeLocalOnline: '桌面客户端在线',
+      modeWeb: '客户端离线',
       pullingLocal: '正在从 GitHub 拉取并构建…',
       pullNowBtn: '一键拉取 GitHub 更新',
       winScriptPrimary: 'Windows 一键更新脚本 (.bat)',
       winScriptSecondary: 'Windows 脚本 (.bat)',
       unixScript: 'macOS / Linux (.sh)',
       copyPullCmd: '复制拉取命令',
-      reloadWebSync: '刷新网页端同步',
+      reloadWebSync: '重新加载客户端',
       hideLog: '收起日志',
       viewLog: '查看日志',
     },

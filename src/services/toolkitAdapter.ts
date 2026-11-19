@@ -149,7 +149,7 @@ export const DEFAULT_ENDPOINT_CONFIG: EndpointConfig = {
   downloaderRpcUrl: 'http://127.0.0.1:17890/api/download',
   ytdlpPath: 'yt-dlp',
   defaultThreads: 32,
-  defaultSaveDir: 'C:\\Users\\Downloads\\JoelDeskPro',
+  defaultSaveDir: '',
   chromeBridgeEnabled: true,
   chromeBridgePort: 17890,
   chromeBridgeToken: 'joeldeskpro-local-bridge',

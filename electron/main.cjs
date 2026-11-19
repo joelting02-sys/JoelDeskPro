@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, Menu } = require('electron');
+const { app, BrowserWindow, dialog, shell, Menu } = require('electron');
 const path = require('node:path');
 const { startLocalEngine } = require('./localEngine.cjs');
 
@@ -67,7 +67,18 @@ function createWindow() {
 
 app.whenReady().then(() => {
   // Automatically start built-in multi-chunk downloader & Colab/Kaggle compute proxy
-  localEngine = startLocalEngine({ port: 17890 });
+  localEngine = startLocalEngine({
+    port: 17890,
+    onPickFolder: async (defaultPath) => {
+      const res = await dialog.showOpenDialog(mainWindow || undefined, {
+        title: 'Select Download Folder',
+        defaultPath,
+        properties: ['openDirectory', 'createDirectory'],
+      });
+      if (res.canceled || !res.filePaths || !res.filePaths[0]) return null;
+      return res.filePaths[0];
+    },
+  });
   createWindow();
 
   app.on('activate', () => {

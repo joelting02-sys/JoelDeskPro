@@ -11,14 +11,12 @@ import {
   AgentActionPayload,
   AgentMessage,
   AttachedFileItem,
-  ChromeExtensionPayload,
   ColabGpuSpec,
   ComputeProvider,
   ComputeRuntimeState,
   ConversionTask,
   DocumentFormat,
   DownloadEngine,
-  DownloadExecutionMode,
   DownloadSource,
   DownloadTask,
   EndpointConfig,
@@ -37,20 +35,18 @@ import {
 import {
   DEFAULT_ENDPOINT_CONFIG,
   detectDocumentFormat,
-  detectDownloadEngine,
   detectMediaKind,
-  extractCleanUrl,
   generateSimulatedTranscript,
   nowTimeLabel,
   parseAgentIntent,
 } from './services/toolkitAdapter';
 import {
-  DirectoryHandleLike,
+  deleteLocalEngineTask,
   dispatchToLocalEngine,
   getChunkCountForThreads,
-  isDemoPlaceholderUrl,
+  pickDesktopFolder,
   probeLocalEngine,
-  runWebMultiChunkDownload,
+  setDesktopSaveDir,
 } from './services/webRangeDownloader';
 import {
   GitHubUpdateInfo,
@@ -81,9 +77,8 @@ export default function App() {
   const [transcriptions, setTranscriptions] = useState<TranscriptionTask[]>([]);
   const [downloads, setDownloads] = useState<DownloadTask[]>([]);
   const [conversions, setConversions] = useState<ConversionTask[]>([]);
-  const [chromeConnected, setChromeConnected] = useState(false);
   const [localEngineOnline, setLocalEngineOnline] = useState(false);
-  const [hasRealDirHandle, setHasRealDirHandle] = useState(false);
+  const [chromeDefaultDir, setChromeDefaultDir] = useState('');
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<GitHubUpdateInfo | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -93,8 +88,6 @@ export default function App() {
   const [computeState, setComputeState] = useState<ComputeRuntimeState>(INITIAL_COMPUTE_STATE);
   const [toast, setToast] = useState<ToastNotice | null>(null);
 
-  const localDirHandleRef = useRef<DirectoryHandleLike | null>(null);
-  const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const langRef = useRef<AppLanguage>(lang);
   langRef.current = lang;
 
@@ -165,48 +158,7 @@ export default function App() {
         });
       });
 
-      // 2. Advance local-monitored / fallback multi-chunk downloads (real web_range updates from live bytes)
-      setDownloads((prev) => {
-        const hasActiveDemo = prev.some(
-          (d) =>
-            d.status === 'downloading' &&
-            (d.executionMode === 'demo' || d.executionMode === 'local_engine' || !d.executionMode)
-        );
-        if (!hasActiveDemo) return prev;
-        return prev.map((task) => {
-          if (task.status !== 'downloading') return task;
-          if (task.executionMode === 'web_range' || task.executionMode === 'extension_bridge') {
-            return task;
-          }
-
-          const activeChunks =
-            task.chunks.length > 0
-              ? task.chunks
-              : Array.from({ length: getChunkCountForThreads(task.threads) }, () => 5);
-          const threadBoost = task.threads / 16;
-          const nextChunks = activeChunks.map((pct) => {
-            if (pct >= 100) return 100;
-            const step = (4.2 + Math.random() * 5.8) * Math.min(2.2, 0.75 + threadBoost * 0.45);
-            return Math.min(100, pct + step);
-          });
-          const avgPct =
-            nextChunks.reduce((sum, item) => sum + item, 0) / nextChunks.length;
-          const nextDownloaded = Math.min(task.totalMB, (task.totalMB * avgPct) / 100);
-          const done = nextChunks.every((pct) => pct >= 100);
-          const deltaMB = Math.max(0, nextDownloaded - task.downloadedMB);
-          const speed = done ? 0 : Math.max(8.5, deltaMB / 0.65);
-
-          return {
-            ...task,
-            chunks: nextChunks,
-            downloadedMB: nextDownloaded,
-            speedMBps: speed,
-            status: done ? 'completed' : 'downloading',
-          };
-        });
-      });
-
-      // 3. Advance active format conversions
+      // 2. Advance active format conversions
       setConversions((prev) => {
         const hasActive = prev.some((c) => c.status === 'converting');
         if (!hasActive) return prev;
@@ -276,182 +228,63 @@ export default function App() {
       userAgent?: string;
       hasCookies?: boolean;
       autoStart?: boolean;
-      handledByLocal?: boolean;
     }) => {
       const tr = TRANSLATIONS[langRef.current].toasts;
-      const taskId = `dl-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
       const chunkCount = getChunkCountForThreads(params.threads);
-      const shouldStart = params.autoStart ?? true;
-      const isDemo = isDemoPlaceholderUrl(params.cleanUrl);
+      const effectiveDir = (params.saveDir ?? config.defaultSaveDir).trim();
 
-      let executionMode: DownloadExecutionMode = 'demo';
-      if (params.handledByLocal) {
-        executionMode = 'local_engine';
-      } else if (!isDemo && localEngineOnline) {
-        executionMode = 'local_engine';
-      } else if (!isDemo) {
-        executionMode = 'web_range';
+      if (!localEngineOnline) {
+        showToast(
+          langRef.current === 'zh'
+            ? '请先启动 Joel Desk Pro 桌面客户端以执行多线程下载'
+            : 'Launch the Joel Desk Pro desktop client to start multi-chunk downloads',
+          'warning'
+        );
+        return '';
       }
 
-      const estimatedTotalMB =
-        params.engine === 'ytdlp'
-          ? 180 + Math.round(Math.random() * 420)
-          : 320 + Math.round(Math.random() * 980);
-
-      const initialChunks = Array.from({ length: chunkCount }, () =>
-        executionMode === 'web_range' ? 0 : shouldStart ? 4 + Math.round(Math.random() * 8) : 0
-      );
-      const initialAvg =
-        initialChunks.reduce((acc, v) => acc + v, 0) / Math.max(1, initialChunks.length);
-
-      const task: DownloadTask = {
-        id: taskId,
-        rawInput: params.rawInput,
-        cleanUrl: params.cleanUrl,
+      const tempId = `pending-${Date.now()}`;
+      dispatchToLocalEngine(config.chromeBridgePort, config.chromeBridgeToken, {
+        url: params.cleanUrl,
         fileName: params.fileName,
-        saveDir: params.saveDir || config.defaultSaveDir,
-        engine: params.engine,
+        saveDir: effectiveDir,
         threads: params.threads,
-        mediaQuality: params.mediaQuality,
-        chunks: initialChunks,
-        totalMB: executionMode === 'web_range' ? 1 : estimatedTotalMB,
-        downloadedMB:
-          executionMode === 'web_range'
-            ? 0
-            : Number(((estimatedTotalMB * initialAvg) / 100).toFixed(1)),
-        speedMBps: shouldStart
-          ? executionMode === 'web_range'
-            ? 0
-            : Math.max(18, params.threads * 1.4)
-          : 0,
-        status: shouldStart ? 'downloading' : 'paused',
-        createdAt: nowTimeLabel(),
-        source: params.source,
         referer: params.referer,
-        userAgent: params.userAgent,
-        hasCookies: params.hasCookies,
-        executionMode,
-      };
-      setDownloads((prev) => [task, ...prev]);
+        kind: params.engine === 'ytdlp' ? 'video-platform' : 'http',
+      }).then((res) => {
+        if (res.ok && res.task) {
+          const lt = res.task;
+          setDownloads((prev) => {
+            if (prev.some((d) => d.id === lt.id)) return prev;
+            const nextTask: DownloadTask = {
+              id: lt.id,
+              rawInput: params.rawInput,
+              cleanUrl: lt.url,
+              fileName: lt.fileName,
+              saveDir: lt.saveDir,
+              engine: lt.engine || params.engine,
+              threads: lt.threads as ThreadCount,
+              mediaQuality: params.mediaQuality,
+              chunks: lt.chunks,
+              totalMB: Number(((lt.totalBytes || 0) / (1024 * 1024)).toFixed(2)),
+              downloadedMB: Number(((lt.downloadedBytes || 0) / (1024 * 1024)).toFixed(2)),
+              speedMBps: lt.speedMBps || 0,
+              status: lt.status === 'completed' ? 'completed' : 'downloading',
+              createdAt: nowTimeLabel(),
+              source: params.source,
+              referer: params.referer,
+              hasCookies: lt.hasCookies,
+              executionMode: 'local_engine',
+            };
+            return [nextTask, ...prev];
+          });
+          showToast(tr.localEngineStarted(chunkCount), 'success');
+        }
+      });
 
-      // 1) Local Desktop Engine dispatch (when local Node engine is running)
-      if (executionMode === 'local_engine' && !params.handledByLocal) {
-        dispatchToLocalEngine(config.chromeBridgePort, config.chromeBridgeToken, {
-          url: params.cleanUrl,
-          fileName: params.fileName,
-          saveDir: params.saveDir || config.defaultSaveDir,
-          threads: params.threads,
-          referer: params.referer,
-          kind: params.engine === 'ytdlp' ? 'video-platform' : 'http',
-        }).then((res) => {
-          if (res.ok) {
-            setDownloads((prev) =>
-              prev.map((item) =>
-                item.id === taskId
-                  ? { ...item, savedLocationLabel: TRANSLATIONS[langRef.current].toasts.localEngineDirectLabel }
-                  : item
-              )
-            );
-          }
-        });
-        showToast(tr.localEngineStarted(chunkCount), 'success');
-        return taskId;
-      }
-
-      if (params.handledByLocal) {
-        showToast(tr.pluginLocalDownload(params.fileName), 'success');
-        return taskId;
-      }
-
-      // 2) Published Web App Direct Multi-Chunk HTTP Range Download
-      if (executionMode === 'web_range' && shouldStart) {
-        const ac = new AbortController();
-        abortControllersRef.current.set(taskId, ac);
-        showToast(tr.webRangeStarted(chunkCount), 'success');
-
-        runWebMultiChunkDownload({
-          url: params.cleanUrl,
-          fileName: params.fileName,
-          threads: params.threads,
-          dirHandle: localDirHandleRef.current,
-          chromeConnected,
-          referer: params.referer,
-          signal: ac.signal,
-          callbacks: {
-            onProgress: ({ chunks, downloadedMB, totalMB, speedMBps }) => {
-              setDownloads((prev) =>
-                prev.map((item) =>
-                  item.id === taskId
-                    ? { ...item, chunks, downloadedMB, totalMB: Math.max(0.01, totalMB), speedMBps }
-                    : item
-                )
-              );
-            },
-            onComplete: ({ savedVia, totalMB }) => {
-              abortControllersRef.current.delete(taskId);
-              const currToasts = TRANSLATIONS[langRef.current].toasts;
-              const label =
-                savedVia === 'directory_handle'
-                  ? currToasts.savedToDir
-                  : savedVia === 'extension_download'
-                    ? currToasts.savedViaExtension
-                    : currToasts.savedToBrowser;
-              setDownloads((prev) =>
-                prev.map((item) =>
-                  item.id === taskId
-                    ? {
-                        ...item,
-                        chunks: item.chunks.map(() => 100),
-                        downloadedMB: totalMB > 0 ? totalMB : item.totalMB,
-                        totalMB: totalMB > 0 ? totalMB : item.totalMB,
-                        speedMBps: 0,
-                        status: 'completed',
-                        savedLocationLabel: label,
-                      }
-                    : item
-                )
-              );
-              showToast(`${params.fileName} · ${label}`, 'success');
-            },
-            onFallback: (reason) => {
-              abortControllersRef.current.delete(taskId);
-              if (ac.signal.aborted) return;
-              const currToasts = TRANSLATIONS[langRef.current].toasts;
-              setDownloads((prev) =>
-                prev.map((item) =>
-                  item.id === taskId
-                    ? {
-                        ...item,
-                        executionMode: 'demo',
-                        totalMB: estimatedTotalMB,
-                        chunks: Array.from({ length: chunkCount }, () => 8),
-                        savedLocationLabel:
-                          reason === 'cors_blocked' ? currToasts.corsLimitedLabel : undefined,
-                      }
-                    : item
-                )
-              );
-              showToast(
-                params.engine === 'ytdlp'
-                  ? currToasts.corsVideoFallback
-                  : currToasts.corsDirectFallback,
-                'warning'
-              );
-            },
-          },
-        });
-        return taskId;
-      }
-
-      if (params.source === 'chrome_extension') {
-        showToast(tr.pluginReceived(params.fileName), 'success');
-      } else {
-        showToast(tr.multiThreadStarted(params.threads, chunkCount), 'success');
-      }
-      return taskId;
+      return tempId;
     },
     [
-      chromeConnected,
       config.chromeBridgePort,
       config.chromeBridgeToken,
       config.defaultSaveDir,
@@ -460,76 +293,109 @@ export default function App() {
     ]
   );
 
-  const handleConnectChrome = useCallback(() => {
-    window.postMessage(
-      {
-        type: 'DESKKIT_CONNECT_REQUEST',
-        port: config.chromeBridgePort,
-        token: config.chromeBridgeToken,
-        url: window.location.href,
-      },
-      '*'
-    );
+  const handleCheckClient = useCallback(() => {
     probeLocalEngine(config.chromeBridgePort).then((res) => {
       setLocalEngineOnline(res.online);
+      if (res.chromeDefaultDir) setChromeDefaultDir(res.chromeDefaultDir);
+      showToast(
+        res.online
+          ? langRef.current === 'zh'
+            ? '桌面客户端连接正常'
+            : 'Desktop client connected'
+          : langRef.current === 'zh'
+            ? '未检测到桌面客户端（端口 ' + config.chromeBridgePort + '）'
+            : `Desktop client offline (port ${config.chromeBridgePort})`,
+        res.online ? 'success' : 'warning'
+      );
     });
-    setConfig((prev) => ({ ...prev, chromeBridgeEnabled: true }));
-    showToast(TRANSLATIONS[langRef.current].toasts.handshakeSending, 'neutral');
-  }, [config.chromeBridgePort, config.chromeBridgeToken, showToast]);
+  }, [config.chromeBridgePort, showToast]);
 
-  const handleChromeExtensionCapture = useCallback(
-    (payload: ChromeExtensionPayload) => {
-      const extracted = extractCleanUrl(payload.url);
-      if (!extracted.cleanUrl) {
-        showToast(TRANSLATIONS[langRef.current].toasts.invalidPluginUrl, 'warning');
-        return;
-      }
-      if (!chromeConnected) {
-        setChromeConnected(true);
-      }
-      const engine = payload.engine ?? detectDownloadEngine(extracted.cleanUrl);
-      createDownloadTask({
-        rawInput: payload.url,
-        cleanUrl: extracted.cleanUrl,
-        fileName: payload.fileName || extracted.fileName,
-        engine,
-        threads: payload.threads ?? config.defaultThreads,
-        mediaQuality: payload.mediaQuality ?? 'best',
-        source: 'chrome_extension',
-        referer: payload.referer,
-        userAgent: payload.userAgent,
-        hasCookies: payload.hasCookies,
-        autoStart: config.chromeBridgeAutoStart,
-        handledByLocal: payload.handledByLocal,
+  const handlePickFolder = useCallback(async (): Promise<boolean> => {
+    const res = await pickDesktopFolder(config.chromeBridgePort);
+    if (res.ok && res.dir) {
+      setConfig((prev) => ({ ...prev, defaultSaveDir: res.dir! }));
+      showToast(TRANSLATIONS[langRef.current].toasts.saveDirSwitched(res.dir), 'success');
+      return true;
+    }
+    if (res.canceled) return true;
+    return false;
+  }, [config.chromeBridgePort, showToast]);
+
+  const handleChangeSaveDir = useCallback(
+    (dir: string) => {
+      const cleaned = dir.trim();
+      setConfig((prev) => ({ ...prev, defaultSaveDir: cleaned }));
+      setDesktopSaveDir(config.chromeBridgePort, cleaned).then((res) => {
+        if (res.chromeDefaultDir) setChromeDefaultDir(res.chromeDefaultDir);
       });
+      const label =
+        cleaned ||
+        chromeDefaultDir ||
+        TRANSLATIONS[langRef.current].download.chromeDefaultLabel;
+      showToast(TRANSLATIONS[langRef.current].toasts.saveDirSwitched(label), 'success');
     },
-    [
-      chromeConnected,
-      config.chromeBridgeAutoStart,
-      config.defaultThreads,
-      createDownloadTask,
-      showToast,
-    ]
+    [chromeDefaultDir, config.chromeBridgePort, showToast]
   );
 
-  // Auto-announce Web App to installed Chrome Extension & probe optional local engine on mount
+  // Continuously poll Desktop Client engine for online status, Chrome default folder & real tasks (including Chrome extension captures!)
   useEffect(() => {
-    const sayHello = () => {
-      window.postMessage(
-        {
-          type: 'DESKKIT_WEB_HELLO',
-          origin: window.location.origin,
-          url: window.location.href,
-        },
-        '*'
-      );
-    };
-    sayHello();
-    const retryTimer = window.setTimeout(sayHello, 700);
-    probeLocalEngine(config.chromeBridgePort).then((res) => {
+    let cancelled = false;
+
+    const syncEngine = async () => {
+      const res = await probeLocalEngine(config.chromeBridgePort);
+      if (cancelled) return;
       setLocalEngineOnline(res.online);
-    });
-    return () => window.clearTimeout(retryTimer);
+      if (res.chromeDefaultDir) setChromeDefaultDir(res.chromeDefaultDir);
+      if (typeof res.customSaveDir === 'string') {
+        setConfig((prev) =>
+          prev.defaultSaveDir === res.customSaveDir
+            ? prev
+            : { ...prev, defaultSaveDir: res.customSaveDir! }
+        );
+      }
+      if (res.online && Array.isArray(res.tasks)) {
+        setDownloads((prev) => {
+          const prevMap = new Map(prev.map((item) => [item.id, item]));
+          const merged: DownloadTask[] = res.tasks!.map((lt) => {
+            const existing = prevMap.get(lt.id);
+            const totalMB = Number(((lt.totalBytes || 0) / (1024 * 1024)).toFixed(2));
+            const downloadedMB = Number(((lt.downloadedBytes || 0) / (1024 * 1024)).toFixed(2));
+            return {
+              id: lt.id,
+              rawInput: existing?.rawInput || lt.url,
+              cleanUrl: lt.url,
+              fileName: lt.fileName,
+              saveDir: lt.saveDir,
+              engine: lt.engine || existing?.engine || 'http_range',
+              threads: (lt.threads as ThreadCount) || 16,
+              mediaQuality: existing?.mediaQuality,
+              chunks: Array.isArray(lt.chunks) && lt.chunks.length > 0 ? lt.chunks : [0],
+              totalMB,
+              downloadedMB,
+              speedMBps: lt.speedMBps || 0,
+              status:
+                lt.status === 'completed'
+                  ? 'completed'
+                  : lt.status === 'paused'
+                    ? 'paused'
+                    : 'downloading',
+              createdAt: existing?.createdAt || nowTimeLabel(),
+              source: lt.source === 'chrome_extension' ? 'chrome_extension' : existing?.source || 'manual',
+              hasCookies: Boolean(lt.hasCookies),
+              executionMode: 'local_engine',
+            };
+          });
+          return merged.reverse();
+        });
+      }
+    };
+
+    syncEngine();
+    const timer = window.setInterval(syncEngine, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, [config.chromeBridgePort]);
 
   // Poll real local compute runtime state every 2s when local engine is online
@@ -712,39 +578,6 @@ export default function App() {
   const handleSelectColabGpu = useCallback((gpu: ColabGpuSpec) => {
     setConfig((prev) => ({ ...prev, colabGpuSpec: gpu }));
   }, []);
-
-  // Listen to real Chrome Extension content-script postMessage events
-  useEffect(() => {
-    const onMessage = (event: MessageEvent) => {
-      if (!event.data || typeof event.data !== 'object') return;
-      if (event.data.type === 'DESKKIT_CONNECT_ACK') {
-        setChromeConnected(true);
-        if (typeof event.data.localOnline === 'boolean') {
-          setLocalEngineOnline(event.data.localOnline);
-        }
-        const currToasts = TRANSLATIONS[langRef.current].toasts;
-        showToast(
-          event.data.localOnline ? currToasts.pluginDualConnected : currToasts.pluginWebConnected,
-          'success'
-        );
-        return;
-      }
-      if (event.data.type !== 'DESKKIT_CHROME_CAPTURE') return;
-      const items: ChromeExtensionPayload[] = Array.isArray(event.data.items)
-        ? event.data.items
-        : event.data.payload
-          ? [event.data.payload]
-          : [];
-      if (items.length > 0) {
-        setActiveView('download');
-        items.forEach((item) => {
-          if (item?.url) handleChromeExtensionCapture(item);
-        });
-      }
-    };
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
-  }, [handleChromeExtensionCapture, showToast]);
 
   const handleCheckGitHubUpdate = useCallback(
     async (silent = false) => {
@@ -1114,25 +947,11 @@ export default function App() {
               lang={lang}
               tasks={downloads}
               config={config}
-              chromeConnected={chromeConnected}
               localEngineOnline={localEngineOnline}
-              hasRealDirHandle={hasRealDirHandle}
-              onConnectChrome={handleConnectChrome}
-              onSelectDirectoryHandle={(handle) => {
-                localDirHandleRef.current = handle;
-                setHasRealDirHandle(Boolean(handle));
-                if (handle) {
-                  const prefix = lang === 'zh' ? '本地文件夹' : 'Local Folder';
-                  setConfig((prev) => ({ ...prev, defaultSaveDir: `${prefix} / ${handle.name}` }));
-                  showToast(t.toasts.dirAuthorized(handle.name), 'success');
-                }
-              }}
-              onChangeSaveDir={(dir) => {
-                localDirHandleRef.current = null;
-                setHasRealDirHandle(false);
-                setConfig((prev) => ({ ...prev, defaultSaveDir: dir }));
-                showToast(t.toasts.saveDirSwitched(dir), 'success');
-              }}
+              chromeDefaultDir={chromeDefaultDir}
+              onCheckClient={handleCheckClient}
+              onPickFolder={handlePickFolder}
+              onChangeSaveDir={handleChangeSaveDir}
               onCreateDownload={(params) =>
                 createDownloadTask({
                   ...params,
@@ -1179,11 +998,7 @@ export default function App() {
                 )
               }
               onDeleteTask={(id) => {
-                const ac = abortControllersRef.current.get(id);
-                if (ac) {
-                  ac.abort();
-                  abortControllersRef.current.delete(id);
-                }
+                deleteLocalEngineTask(config.chromeBridgePort, id);
                 setDownloads((prev) => prev.filter((item) => item.id !== id));
               }}
               onCopyText={handleCopyText}
@@ -1228,6 +1043,9 @@ export default function App() {
               onSaveConfig={(next) => {
                 setConfig(next);
                 if (localEngineOnline) {
+                  setDesktopSaveDir(next.chromeBridgePort, next.defaultSaveDir.trim()).then((res) => {
+                    if (res && res.chromeDefaultDir) setChromeDefaultDir(res.chromeDefaultDir);
+                  });
                   syncLocalComputeSettings(next.chromeBridgePort, next.chromeBridgeToken, {
                     auto_shutdown_enabled: next.autoShutdownEnabled,
                     auto_shutdown_minutes: next.autoShutdownMinutes,

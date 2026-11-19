@@ -279,6 +279,11 @@ export function SettingsView({
                 onChange={(e) =>
                   setForm((prev) => ({ ...prev, defaultSaveDir: e.target.value }))
                 }
+                placeholder={
+                  lang === 'zh'
+                    ? '留空则默认使用 Chrome 下载文件夹'
+                    : 'Leave blank to use Chrome Default Downloads'
+                }
                 className="h-9 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[13px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
               />
             </div>

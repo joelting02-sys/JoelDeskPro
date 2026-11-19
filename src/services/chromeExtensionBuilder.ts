@@ -241,17 +241,16 @@ export function createZipBlob(
  * - popup.html & popup.js (DeskKit light UI resource list + 7-category takeover settings)
  * - icons/16.png, 48.png, 128.png (real generated PNG icons)
  */
-export function buildDeskKitChromeExtension(port: number, token: string, defaultWebUrl = '') {
+export function buildDeskKitChromeExtension(port: number, token: string, _defaultWebUrl = '') {
   const endpoint = `http://127.0.0.1:${port}/api/bridge/capture`;
-  const normalizedWebUrl = defaultWebUrl ? defaultWebUrl.split('#')[0] : '';
 
   const manifestJson = JSON.stringify(
     {
       manifest_version: 3,
       name: 'JoelDeskPro',
-      version: '1.1.0',
+      version: '1.2.0',
       description:
-        'JoelDeskPro 浏览器插件：支持直连 Joel Desk Pro 网页端与本地客户端双通道，在 YouTube / 抖音 / B站视频右上角悬浮一键下载并嗅探全站资源。',
+        'JoelDeskPro Chrome 插件：配合 Joel Desk Pro 桌面客户端使用，在 YouTube / 抖音 / 小红书 / B站等任意视频平台弹出画质与大小选择小窗，后台静默高速下载不跳转页面。',
       permissions: [
         'webRequest',
         'downloads',
@@ -385,11 +384,87 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
     return [...new Set(out)];
   }
 
+  function extractDouyinVariants(video) {
+    if (!video || typeof video !== 'object') return [];
+    const variants = [];
+    const seenH = new Set();
+    const firstUrl = (addr) => {
+      if (!addr || typeof addr !== 'object') return null;
+      const list = addr.url_list || addr.urlList || [];
+      for (const u of list) {
+        const n = normUrl(typeof u === 'string' ? u : u && (u.src || u.url));
+        if (n) return n;
+      }
+      return null;
+    };
+    try {
+      const brs = video.bit_rate || video.bitRateList || video.bitrateList;
+      if (Array.isArray(brs)) {
+        const sorted = [...brs].sort((a, b) => {
+          const ah = (a && a.play_addr && a.play_addr.height) || (a && a.height) || 0;
+          const bh = (b && b.play_addr && b.play_addr.height) || (b && b.height) || 0;
+          if (bh !== ah) return bh - ah;
+          return (Number(b && b.bit_rate) || 0) - (Number(a && a.bit_rate) || 0);
+        });
+        for (let i = 0; i < sorted.length; i++) {
+          const b = sorted[i];
+          if (!b) continue;
+          const addr = b.play_addr || b.playAddr;
+          const u = firstUrl(addr) || normUrl(b.play_api || b.playApi);
+          if (!u) continue;
+          const w = Number((addr && addr.width) || b.width || video.width || 0);
+          const h = Number((addr && addr.height) || b.height || video.height || 0);
+          const shortSide = w && h ? Math.min(w, h) : h || w;
+          const gear = String(b.gear_name || b.gearName || '');
+          const gm = gear.match(/(2160|1440|1080|720|540|480|360)/);
+          const qualityH = gm ? Number(gm[1]) : shortSide >= 1000 ? 1080 : shortSide >= 700 ? 720 : shortSide >= 500 ? 540 : shortSide || h;
+          const key = qualityH + '-' + (b.is_h265 ? 'h265' : 'h264');
+          if (seenH.has(qualityH)) continue;
+          seenH.add(qualityH);
+          const sizeBytes = Number((addr && (addr.data_size || addr.dataSize)) || b.data_size || 0) || null;
+          const fps = Number(b.FPS || b.fps || 0) || null;
+          variants.push({
+            id: 'dy-' + key + '-' + i,
+            url: u,
+            height: qualityH,
+            width: w,
+            fps: fps && fps >= 45 ? fps : null,
+            sizeBytes,
+            ext: 'mp4',
+            label: qualityH >= 2160 ? '2160p (4K)' : qualityH >= 1080 ? '1080p HD' : qualityH >= 720 ? '720p HD' : qualityH ? qualityH + 'p' : '原画',
+            note: [fps && fps >= 45 ? fps + 'fps' : '', 'MP4'].filter(Boolean).join(' · '),
+          });
+        }
+      }
+      if (!variants.length) {
+        const urls = bestPlayUrls(video);
+        if (urls.length) {
+          const addr = video.play_addr || video.playAddr || {};
+          const w = Number(addr.width || video.width || 0);
+          const h = Number(addr.height || video.height || 0);
+          const q = w && h ? Math.min(w, h) : h;
+          variants.push({
+            id: 'dy-orig',
+            url: urls[0],
+            height: q,
+            width: w,
+            fps: null,
+            sizeBytes: Number(addr.data_size || addr.dataSize || 0) || null,
+            ext: 'mp4',
+            label: q >= 1080 ? '1080p HD' : q >= 720 ? '720p HD' : q ? q + 'p' : '原画',
+            note: 'MP4',
+          });
+        }
+      }
+    } catch (e) {}
+    return variants;
+  }
+
   function awemeIdOf(node) {
     return node && (node.aweme_id || node.awemeId);
   }
 
-  function deepCollectAweme(root, map, budgetMax) {
+  function deepCollectAweme(root, map, varMap, budgetMax) {
     let budget = budgetMax || 35000;
     const stack = [[root, 0]];
     const visited = new Set();
@@ -403,6 +478,10 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
         if (id && vid && typeof vid === 'object') {
           const urls = bestPlayUrls(vid);
           if (urls.length) map[String(id)] = urls;
+          if (varMap) {
+            const vars = extractDouyinVariants(vid);
+            if (vars.length) varMap[String(id)] = vars;
+          }
         }
       } catch (e) {}
       for (const k in node) {
@@ -414,10 +493,10 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
     }
   }
 
-  function reportDouyinMap(map) {
+  function reportDouyinMap(map, varMap) {
     try {
-      if (!map || !Object.keys(map).length) return;
-      window.postMessage({ __deskkit_douyin: true, map }, '*');
+      if ((!map || !Object.keys(map).length) && (!varMap || !Object.keys(varMap).length)) return;
+      window.postMessage({ __deskkit_douyin: true, map: map || {}, variants: varMap || {} }, '*');
     } catch (e) {}
   }
 
@@ -430,22 +509,76 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
       return;
     }
     const map = {};
+    const varMap = {};
     try {
-      deepCollectAweme(obj, map);
+      deepCollectAweme(obj, map, varMap);
     } catch (e) {}
-    reportDouyinMap(map);
+    reportDouyinMap(map, varMap);
   }
 
   function scanDouyinGlobals() {
     if (!/(^|\\.)douyin\\.com$/i.test(location.hostname)) return;
     const map = {};
+    const varMap = {};
     const keys = ['_ROUTER_DATA', '__INITIAL_STATE__', '__INIT_PROPS__', '_SSR_DATA', 'RENDER_DATA', '__NEXT_DATA__'];
     for (const key of keys) {
       try {
-        if (window[key]) deepCollectAweme(window[key], map);
+        if (window[key]) deepCollectAweme(window[key], map, varMap);
       } catch (e) {}
     }
-    reportDouyinMap(map);
+    reportDouyinMap(map, varMap);
+  }
+
+  // Xiaohongshu multi-quality stream extractor
+  function scanXhsStreams() {
+    if (!/(^|\\.)xiaohongshu\\.com$/i.test(location.hostname)) return;
+    try {
+      const state = window.__INITIAL_STATE__;
+      if (!state || typeof state !== 'object') return;
+      const variants = [];
+      const seenH = new Set();
+      const stack = [[state, 0]];
+      const visited = new Set();
+      let budget = 18000;
+      while (stack.length && budget-- > 0) {
+        const [node, depth] = stack.pop();
+        if (!node || typeof node !== 'object' || depth > 12 || visited.has(node)) continue;
+        visited.add(node);
+        if (node.stream && typeof node.stream === 'object') {
+          const pools = [...(node.stream.h264 || []), ...(node.stream.h265 || []), ...(node.stream.av1 || [])];
+          for (const st of pools) {
+            if (!st || typeof st !== 'object') continue;
+            const u = normUrl(st.masterUrl || (Array.isArray(st.backupUrls) && st.backupUrls[0]));
+            if (!u) continue;
+            const w = Number(st.width || 0);
+            const h = Number(st.height || 0);
+            const q = w && h ? Math.min(w, h) : h;
+            if (seenH.has(q || u)) continue;
+            seenH.add(q || u);
+            variants.push({
+              id: 'xhs-' + (q || variants.length),
+              url: u,
+              height: q,
+              width: w,
+              fps: Number(st.fps || 0) >= 45 ? Math.round(Number(st.fps)) : null,
+              sizeBytes: Number(st.size || 0) || null,
+              ext: 'mp4',
+              label: q >= 2160 ? '2160p (4K)' : q >= 1080 ? '1080p HD' : q >= 720 ? '720p HD' : q ? q + 'p' : (st.streamDesc || '原画'),
+              note: st.streamDesc || 'MP4',
+            });
+          }
+        }
+        for (const k in node) {
+          try {
+            const v = node[k];
+            if (v && typeof v === 'object') stack.push([v, depth + 1]);
+          } catch (e) {}
+        }
+      }
+      if (variants.length) {
+        window.postMessage({ __deskkit_xhs: true, variants, pageUrl: location.href }, '*');
+      }
+    } catch (e) {}
   }
 
   function getReactFiber(el) {
@@ -468,17 +601,18 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
     const item = (v.closest && v.closest('[data-e2e="feed-item"]')) || v.parentElement || v;
     let fiber = getReactFiber(item) || getReactFiber(v);
     const map = {};
+    const varMap = {};
     let hops = 0;
     while (fiber && hops++ < 40 && !Object.keys(map).length) {
       for (const key of ['memoizedProps', 'pendingProps', 'memoizedState']) {
         try {
           const p = fiber[key];
-          if (p && typeof p === 'object') deepCollectAweme(p, map, 6000);
+          if (p && typeof p === 'object') deepCollectAweme(p, map, varMap, 6000);
         } catch (e) {}
       }
       fiber = fiber.return;
     }
-    reportDouyinMap(map);
+    reportDouyinMap(map, varMap);
   }
 
   // Safe fetch hook (skips if window.fetch is read-only)
@@ -528,8 +662,9 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
                 reportDouyinFromText(this.responseText);
               } else if (this.responseType === 'json' && this.response) {
                 const m = {};
-                deepCollectAweme(this.response, m);
-                reportDouyinMap(m);
+                const vm = {};
+                deepCollectAweme(this.response, m, vm);
+                reportDouyinMap(m, vm);
               }
             }
           } catch (e) {}
@@ -590,99 +725,52 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
     setInterval(scanBoth, 1200);
     scanBoth();
   }
+
+  if (/(^|\\.)xiaohongshu\\.com$/i.test(location.hostname)) {
+    setInterval(scanXhsStreams, 1500);
+    scanXhsStreams();
+  }
 })();
 `;
 
   const contentJs = `'use strict';
-// DeskKit Content Script:
-// 1) Top-right floating "下载该视频" button on hover over any <video> (YouTube, Douyin, Bilibili, X, TikTok...)
-// 2) SPA route tracking + Douyin aweme_id exact play URL resolution
-// 3) DeskKit Web App handshake responder
+// JoelDeskPro Content Script (Desktop Client Bridge Only):
+// 1) Top-right Black & Gold hover "JoelDeskPro 下载" button on any <video>
+// 2) In-page Shadow DOM Quality & File-Size Picker mini-window (YouTube, Douyin, Xiaohongshu, Bilibili, TikTok, X, HLS, MP4...)
+// 3) Pure silent background download -> NEVER jumps away or steals focus
 (function () {
   const seen = new Set();
   const douyinPlayMap = Object.create(null);
+  const douyinVariantMap = Object.create(null);
+  let xhsVariants = [];
   let dismissed = false;
-
-  // Bidirectional bridge between DeskKit Web App and Chrome Extension background
-  function registerThisWebTab() {
-    try {
-      chrome.runtime.sendMessage(
-        { type: 'registerWebApp', url: location.href, origin: location.origin },
-        (resp) => {
-          if (chrome.runtime.lastError) return;
-          window.postMessage(
-            {
-              type: 'DESKKIT_CONNECT_ACK',
-              version: '1.1.0',
-              webRegistered: true,
-              localOnline: Boolean(resp && resp.localOnline),
-              targetMode: (resp && resp.targetMode) || 'auto',
-            },
-            '*'
-          );
-        }
-      );
-    } catch (e) {}
-  }
-
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (msg && msg.type === 'DESKKIT_WEB_DISPATCH' && Array.isArray(msg.items)) {
-      window.postMessage(
-        {
-          type: 'DESKKIT_CHROME_CAPTURE',
-          items: msg.items,
-          payload: msg.items[0] || null,
-        },
-        '*'
-      );
-      sendResponse && sendResponse({ ok: true });
-      return true;
-    }
-  });
 
   window.addEventListener('message', (ev) => {
     if (ev.source !== window || !ev.data || typeof ev.data !== 'object') return;
-    if (ev.data.type === 'DESKKIT_WEB_HELLO' || ev.data.type === 'DESKKIT_CONNECT_REQUEST') {
-      registerThisWebTab();
-      return;
-    }
-    if (ev.data.type === 'DESKKIT_EXT_DIRECT_DOWNLOAD' && ev.data.url) {
-      const requestId = ev.data.requestId || '';
-      try {
-        chrome.runtime.sendMessage(
-          {
-            type: 'extDirectDownload',
-            url: ev.data.url,
-            fileName: ev.data.fileName || '',
-            referer: ev.data.referer || '',
-          },
-          (resp) => {
-            window.postMessage(
-              {
-                type: 'DESKKIT_EXT_DIRECT_DOWNLOAD_ACK',
-                requestId,
-                ok: Boolean(!chrome.runtime.lastError && resp && resp.ok),
-              },
-              '*'
-            );
-          }
-        );
-      } catch (e) {
-        window.postMessage({ type: 'DESKKIT_EXT_DIRECT_DOWNLOAD_ACK', requestId, ok: false }, '*');
-      }
-      return;
-    }
     if (ev.data.__deskkit_media && ev.data.url && !seen.has(ev.data.url)) {
       seen.add(ev.data.url);
       report([{ url: ev.data.url, mime: ev.data.mime || '', title: document.title, pageUrl: location.href }]);
       return;
     }
-    if (ev.data.__deskkit_douyin && ev.data.map) {
-      for (const k in ev.data.map) {
-        if (Array.isArray(ev.data.map[k]) && ev.data.map[k].length) {
-          douyinPlayMap[k] = ev.data.map[k];
+    if (ev.data.__deskkit_douyin) {
+      if (ev.data.map) {
+        for (const k in ev.data.map) {
+          if (Array.isArray(ev.data.map[k]) && ev.data.map[k].length) {
+            douyinPlayMap[k] = ev.data.map[k];
+          }
         }
       }
+      if (ev.data.variants) {
+        for (const k in ev.data.variants) {
+          if (Array.isArray(ev.data.variants[k]) && ev.data.variants[k].length) {
+            douyinVariantMap[k] = ev.data.variants[k];
+          }
+        }
+      }
+      return;
+    }
+    if (ev.data.__deskkit_xhs && Array.isArray(ev.data.variants) && ev.data.variants.length) {
+      xhsVariants = ev.data.variants;
     }
   });
 
@@ -713,6 +801,7 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
     if (location.href === lastHref) return;
     lastHref = location.href;
     seen.clear();
+    xhsVariants = [];
     dismissed = false;
     try {
       chrome.runtime.sendMessage({ type: 'spaNavigate', url: location.href, title: document.title });
@@ -734,13 +823,45 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
   window.addEventListener('hashchange', () => setTimeout(notifyUrlChange, 0));
   setInterval(notifyUrlChange, 700);
 
-  // Top-frame floating download button in top-right corner of <video>
+  // Top-frame floating download button + Shadow DOM Quality Picker mini-window
   if (window.top === window.self) {
     const OVERLAY_ID = 'deskkit-video-overlay';
+    const PICKER_HOST_ID = 'joeldeskpro-quality-picker-host';
     let overlayEl = null;
     let overlayTarget = null;
     let hideTimer = null;
-    let overlayCursor = { x: NaN, y: NaN };
+    let pickerHost = null;
+    let pickerCloseTimer = null;
+
+    function fmtSize(bytes, estimated) {
+      if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return '大小未知';
+      const u = ['B', 'KB', 'MB', 'GB'];
+      let i = 0;
+      let n = bytes;
+      while (n >= 1024 && i < u.length - 1) {
+        n /= 1024;
+        i++;
+      }
+      return (estimated ? '约 ' : '') + n.toFixed(i >= 2 ? 1 : 0) + ' ' + u[i];
+    }
+
+    function fmtDuration(sec) {
+      if (!sec || !Number.isFinite(sec) || sec <= 0) return '';
+      const s = Math.floor(sec);
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const r = s % 60;
+      const pad = (x) => String(x).padStart(2, '0');
+      return h > 0 ? h + ':' + pad(m) + ':' + pad(r) : m + ':' + pad(r);
+    }
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
 
     function isDownloadableVideo(v) {
       if (!(v instanceof HTMLVideoElement)) return false;
@@ -750,25 +871,453 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
       return true;
     }
 
-    function showToast(msg) {
+    function showToast(msg, tone) {
       const t = document.createElement('div');
       t.textContent = msg;
       Object.assign(t.style, {
         position: 'fixed',
-        left: '50%',
-        top: '28px',
-        transform: 'translateX(-50%)',
+        right: '22px',
+        bottom: '22px',
         zIndex: '2147483647',
-        padding: '10px 16px',
-        borderRadius: '16px',
-        background: 'rgba(15,23,42,0.92)',
-        color: '#fff',
-        font: '600 13px/1.4 -apple-system,BlinkMacSystemFont,"Microsoft YaHei",sans-serif',
-        boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
+        padding: '10px 15px',
+        borderRadius: '14px',
+        border: tone === 'error' ? '1px solid rgba(239,68,68,0.5)' : '1px solid rgba(212,175,55,0.45)',
+        background: 'rgba(12,12,14,0.94)',
+        color: tone === 'error' ? '#FCA5A5' : '#F8FAFC',
+        font: '600 12.5px/1.4 -apple-system,BlinkMacSystemFont,"Microsoft YaHei",sans-serif',
+        boxShadow: '0 10px 28px rgba(0,0,0,0.35)',
         pointerEvents: 'none',
       });
       (document.body || document.documentElement).appendChild(t);
-      setTimeout(() => t.remove(), 3000);
+      setTimeout(() => t.remove(), 2600);
+    }
+
+    function closePicker() {
+      clearTimeout(pickerCloseTimer);
+      if (pickerHost) {
+        pickerHost.remove();
+        pickerHost = null;
+      }
+    }
+
+    function openQualityPicker(candidate, anchorRect) {
+      closePicker();
+
+      const host = document.createElement('div');
+      host.id = PICKER_HOST_ID;
+      Object.assign(host.style, {
+        position: 'fixed',
+        zIndex: '2147483647',
+        top: '0',
+        left: '0',
+        width: '0',
+        height: '0',
+        pointerEvents: 'none',
+      });
+      const shadow = host.attachShadow({ mode: 'open' });
+
+      const panelW = 336;
+      const defaultLeft = anchorRect
+        ? Math.max(12, Math.min(window.innerWidth - panelW - 14, anchorRect.right - panelW))
+        : window.innerWidth - panelW - 22;
+      const defaultTop = anchorRect
+        ? Math.max(12, Math.min(window.innerHeight - 360, anchorRect.top + 46))
+        : 64;
+
+      shadow.innerHTML = \`
+        <style>
+          * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; }
+          .card {
+            position: fixed;
+            top: \${defaultTop}px;
+            left: \${defaultLeft}px;
+            width: \${panelW}px;
+            max-height: 440px;
+            display: flex;
+            flex-direction: column;
+            background: #111215;
+            color: #F8FAFC;
+            border: 1px solid rgba(212, 175, 55, 0.38);
+            border-radius: 16px;
+            box-shadow: 0 20px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255,255,255,0.04) inset;
+            overflow: hidden;
+            pointer-events: auto;
+            animation: jdpFadeIn 0.14s ease-out;
+          }
+          @keyframes jdpFadeIn {
+            from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+          }
+          .hd {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 11px 13px;
+            background: linear-gradient(135deg, #17181C 0%, #0D0E10 100%);
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+          }
+          .logo {
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            background: linear-gradient(135deg, #F3D98B 0%, #C89B2B 100%);
+            color: #0B0B0D;
+            font-weight: 800;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+          }
+          .brand { font-size: 12.5px; font-weight: 700; letter-spacing: 0.2px; color: #F5E1A4; }
+          .plat {
+            font-size: 10.5px;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 6px;
+            background: rgba(212,175,55,0.14);
+            color: #E5C466;
+            border: 1px solid rgba(212,175,55,0.28);
+            max-width: 110px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+          .spacer { flex: 1; }
+          .close {
+            width: 24px;
+            height: 24px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.06);
+            color: #94A3B8;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+          .close:hover { background: rgba(255,255,255,0.14); color: #fff; }
+          .title-box {
+            padding: 9px 13px 7px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+          }
+          .title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #E2E8F0;
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+          }
+          .meta { font-size: 10.5px; color: #94A3B8; margin-top: 3px; display: flex; gap: 8px; }
+          .body {
+            padding: 8px 10px;
+            overflow-y: auto;
+            max-height: 235px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+          }
+          .loading {
+            padding: 24px 12px;
+            text-align: center;
+            color: #94A3B8;
+            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 9px;
+          }
+          .spin {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(212,175,55,0.22);
+            border-top-color: #D4AF37;
+            border-radius: 9999px;
+            animation: jdpSpin 0.75s linear infinite;
+          }
+          @keyframes jdpSpin { to { transform: rotate(360deg); } }
+          .row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.07);
+            background: rgba(255,255,255,0.03);
+            cursor: pointer;
+            transition: all 0.12s ease;
+          }
+          .row:hover {
+            background: rgba(212,175,55,0.09);
+            border-color: rgba(212,175,55,0.34);
+          }
+          .row.active {
+            background: rgba(212,175,55,0.14);
+            border-color: rgba(212,175,55,0.72);
+          }
+          .radio {
+            width: 14px;
+            height: 14px;
+            border-radius: 9999px;
+            border: 1.5px solid #64748B;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+          }
+          .row.active .radio { border-color: #E5C466; }
+          .row.active .radio::after {
+            content: '';
+            width: 7px;
+            height: 7px;
+            border-radius: 9999px;
+            background: #E5C466;
+          }
+          .q-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; }
+          .q-label { font-size: 12.5px; font-weight: 700; color: #F8FAFC; }
+          .q-note {
+            font-size: 10px;
+            color: #94A3B8;
+            background: rgba(255,255,255,0.06);
+            padding: 1px 6px;
+            border-radius: 5px;
+            white-space: nowrap;
+          }
+          .q-size {
+            font-size: 11.5px;
+            font-weight: 600;
+            color: #E5C466;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+          }
+          .q-go {
+            border: none;
+            border-radius: 7px;
+            padding: 4px 8px;
+            background: rgba(212,175,55,0.18);
+            color: #F5E1A4;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+          }
+          .q-go:hover { background: #D4AF37; color: #0B0B0D; }
+          .warn {
+            margin: 4px 10px 0;
+            padding: 6px 9px;
+            border-radius: 8px;
+            background: rgba(245,158,11,0.12);
+            border: 1px solid rgba(245,158,11,0.3);
+            color: #FCD34D;
+            font-size: 11px;
+            line-height: 1.45;
+          }
+          .ft {
+            padding: 10px 12px 11px;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            background: #0D0E10;
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+          }
+          .cta {
+            width: 100%;
+            border: none;
+            border-radius: 10px;
+            padding: 9px 12px;
+            background: linear-gradient(135deg, #F3D98B 0%, #C89B2B 100%);
+            color: #0B0B0D;
+            font-size: 12.5px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity 0.12s;
+          }
+          .cta:hover { opacity: 0.92; }
+          .cta:disabled { opacity: 0.45; cursor: not-allowed; }
+          .cta.ok { background: #16A34A; color: #FFFFFF; }
+          .hint {
+            font-size: 10.5px;
+            color: #94A3B8;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+        </style>
+        <div class="card" role="dialog" aria-label="JoelDeskPro 画质选择">
+          <div class="hd">
+            <div class="logo">J</div>
+            <span class="brand">JoelDeskPro</span>
+            <span class="plat" id="plat">解析中</span>
+            <div class="spacer"></div>
+            <button type="button" class="close" id="closeBtn" title="关闭">✕</button>
+          </div>
+          <div class="title-box">
+            <div class="title" id="titleText">\${escapeHtml(candidate.title || document.title || '视频资源')}</div>
+            <div class="meta" id="metaText"><span>正在检测可用画质与文件大小…</span></div>
+          </div>
+          <div id="warnBox"></div>
+          <div class="body" id="bodyEl">
+            <div class="loading">
+              <div class="spin"></div>
+              <span>正在分析当前视频支持的画质与大小…</span>
+            </div>
+          </div>
+          <div class="ft">
+            <button type="button" class="cta" id="dlBtn" disabled>后台下载</button>
+            <div class="hint" id="hintText">后台静默下载，不会跳转页面</div>
+          </div>
+        </div>
+      \`;
+
+      (document.body || document.documentElement).appendChild(host);
+      pickerHost = host;
+
+      const platEl = shadow.getElementById('plat');
+      const titleEl = shadow.getElementById('titleText');
+      const metaEl = shadow.getElementById('metaText');
+      const warnBox = shadow.getElementById('warnBox');
+      const bodyEl = shadow.getElementById('bodyEl');
+      const dlBtn = shadow.getElementById('dlBtn');
+      const hintText = shadow.getElementById('hintText');
+      const closeBtn = shadow.getElementById('closeBtn');
+
+      closeBtn.onclick = closePicker;
+
+      const onKey = (e) => {
+        if (e.key === 'Escape') {
+          closePicker();
+          window.removeEventListener('keydown', onKey, true);
+        }
+      };
+      window.addEventListener('keydown', onKey, true);
+
+      let formats = [];
+      let selectedIdx = 0;
+      let resolvedTitle = candidate.title || document.title || 'video';
+      let saveDir = '';
+
+      function updateCta() {
+        const f = formats[selectedIdx];
+        if (!f) {
+          dlBtn.disabled = true;
+          dlBtn.textContent = '暂无可下载画质';
+          return;
+        }
+        dlBtn.disabled = false;
+        const sizeTxt = f.sizeBytes ? ' · ' + fmtSize(f.sizeBytes, f.estimated) : '';
+        dlBtn.textContent = '后台下载 (' + f.label + sizeTxt + ')';
+      }
+
+      function dispatchFormat(idx) {
+        const f = formats[idx];
+        if (!f) return;
+        dlBtn.disabled = true;
+        dlBtn.textContent = '正在加入后台队列…';
+        const cleanTitle = (resolvedTitle || 'video').replace(/[\\\\/:*?"<>|]+/g, '_').trim().slice(0, 80) || 'video';
+        const ext = f.ext || (f.audioOnly ? 'mp3' : 'mp4');
+        const item = {
+          url: f.url || candidate.url,
+          kind: f.kind || candidate.kind || 'http',
+          filename: cleanTitle + '.' + ext,
+          referer: candidate.referer || location.href,
+          formatId: f.formatId || '',
+          qualityLabel: f.label || '',
+          audioOnly: Boolean(f.audioOnly),
+          ext,
+          size: f.sizeBytes || null,
+        };
+        chrome.runtime.sendMessage({ type: 'send', items: [item] }, (resp) => {
+          if (chrome.runtime.lastError || !resp || !resp.ok) {
+            dlBtn.disabled = false;
+            updateCta();
+            warnBox.innerHTML = '<div class="warn">未检测到 Joel Desk Pro 客户端（端口 ${port}），请先启动桌面客户端后重试。</div>';
+            return;
+          }
+          dlBtn.classList.add('ok');
+          dlBtn.textContent = '✓ 已开始后台下载（' + f.label + '）';
+          const dir = (resp && resp.saveDir) || saveDir || 'Chrome 默认下载目录';
+          hintText.textContent = '保存至: ' + dir + ' · 无需跳转';
+          showToast('已开始后台下载：' + f.label + (f.sizeBytes ? ' (' + fmtSize(f.sizeBytes, f.estimated) + ')' : ''));
+          pickerCloseTimer = setTimeout(closePicker, 1500);
+        });
+      }
+
+      function renderFormats() {
+        bodyEl.innerHTML = '';
+        if (!formats.length) {
+          bodyEl.innerHTML = '<div class="loading"><span>未能解析出画质列表，请稍后重试。</span></div>';
+          updateCta();
+          return;
+        }
+        formats.forEach((f, idx) => {
+          const row = document.createElement('div');
+          row.className = 'row' + (idx === selectedIdx ? ' active' : '');
+          row.innerHTML = \`
+            <div class="radio"></div>
+            <div class="q-main">
+              <span class="q-label">\${escapeHtml(f.label)}</span>
+              \${f.note ? '<span class="q-note">' + escapeHtml(f.note) + '</span>' : ''}
+            </div>
+            <span class="q-size">\${escapeHtml(fmtSize(f.sizeBytes, f.estimated))}</span>
+            <button type="button" class="q-go">下载</button>
+          \`;
+          row.onclick = () => {
+            selectedIdx = idx;
+            bodyEl.querySelectorAll('.row').forEach((r, i) => r.classList.toggle('active', i === idx));
+            updateCta();
+          };
+          row.querySelector('.q-go').onclick = (e) => {
+            e.stopPropagation();
+            selectedIdx = idx;
+            dispatchFormat(idx);
+          };
+          bodyEl.appendChild(row);
+        });
+        updateCta();
+      }
+
+      dlBtn.onclick = () => dispatchFormat(selectedIdx);
+
+      // Call background -> local Desktop Client /api/bridge/probe
+      chrome.runtime.sendMessage({ type: 'probe', item: candidate }, (resp) => {
+        if (!pickerHost) return;
+        if (chrome.runtime.lastError || !resp || !resp.clientOnline) {
+          platEl.textContent = '客户端未启动';
+          metaEl.innerHTML = '<span>请先打开 Joel Desk Pro 桌面客户端</span>';
+          warnBox.innerHTML = '<div class="warn">未检测到本地客户端（127.0.0.1:${port}），打开 Joel Desk Pro 后即可自动解析任意平台画质并后台高速下载。</div>';
+          // If page already has direct variants (Douyin/Xiaohongshu), still preview them cleanly
+          if (Array.isArray(candidate.variants) && candidate.variants.length) {
+            formats = candidate.variants;
+            renderFormats();
+          } else {
+            bodyEl.innerHTML = '<div class="loading"><span>等待连接 Joel Desk Pro 桌面客户端…</span></div>';
+          }
+          return;
+        }
+
+        resolvedTitle = resp.title || resolvedTitle;
+        saveDir = resp.saveDir || '';
+        platEl.textContent = resp.platform || 'Video';
+        titleEl.textContent = resolvedTitle;
+        const dur = fmtDuration(resp.duration);
+        const countTxt = Array.isArray(resp.formats) ? resp.formats.length + ' 种可选画质' : '';
+        metaEl.innerHTML = [dur ? '<span>时长 ' + dur + '</span>' : '', countTxt ? '<span>' + countTxt + '</span>' : '']
+          .filter(Boolean)
+          .join('<span>·</span>');
+        if (saveDir) {
+          hintText.textContent = '保存至: ' + saveDir + ' · 后台下载不跳转';
+        }
+        if (resp.probeError) {
+          warnBox.innerHTML = '<div class="warn">' + escapeHtml(resp.probeError) + '</div>';
+        }
+        formats = Array.isArray(resp.formats) ? resp.formats : [];
+        selectedIdx = 0;
+        renderFormats();
+      });
     }
 
     function buildOverlay() {
@@ -776,10 +1325,10 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
       const el = document.createElement('div');
       el.id = OVERLAY_ID;
       el.innerHTML = \`
-        <button type="button" class="dk-dl-btn" title="发送到 Joel Desk Pro 多线程高速下载">
-          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-            <path d="M12 3v11M12 14l-4-4M12 14l4-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M5 19h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+        <button type="button" class="dk-dl-btn" title="选择画质并后台高速下载（不跳转页面）">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+            <path d="M12 3v11M12 14l-4-4M12 14l4-4" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M5 19h14" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>
           </svg>
           <span>JoelDeskPro 下载</span>
         </button>
@@ -799,39 +1348,33 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
         display: 'flex',
         alignItems: 'center',
         gap: '6px',
-        padding: '8px 13px',
-        border: '1px solid rgba(255,255,255,0.22)',
-        borderRadius: '16px',
-        background: 'rgba(37,99,235,0.94)',
+        padding: '7px 12px',
+        border: '1px solid rgba(212,175,55,0.65)',
+        borderRadius: '14px',
+        background: 'rgba(15,16,19,0.92)',
         backdropFilter: 'blur(8px)',
-        color: '#fff',
+        color: '#F5E1A4',
         font: '600 12px/1 -apple-system,BlinkMacSystemFont,"Microsoft YaHei",sans-serif',
         cursor: 'pointer',
-        boxShadow: '0 6px 18px rgba(15,23,42,0.32)',
+        boxShadow: '0 6px 18px rgba(0,0,0,0.42)',
         whiteSpace: 'nowrap',
       });
 
       btn.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        triggerDownload(overlayTarget);
-        const span = btn.querySelector('span');
-        if (span) span.textContent = '已发往 JoelDeskPro ✓';
-        btn.style.background = 'rgba(22,163,74,0.95)';
-        setTimeout(() => {
-          if (span) span.textContent = 'JoelDeskPro 下载';
-          btn.style.background = 'rgba(37,99,235,0.94)';
-        }, 1800);
+        const rect = el.getBoundingClientRect();
+        triggerDownloadPicker(overlayTarget, rect);
       };
 
       const closeBtn = el.querySelector('.dk-close-btn');
       Object.assign(closeBtn.style, {
-        width: '26px',
-        height: '26px',
-        border: 'none',
+        width: '25px',
+        height: '25px',
+        border: '1px solid rgba(255,255,255,0.14)',
         borderRadius: '9999px',
-        background: 'rgba(15,23,42,0.65)',
-        color: '#fff',
+        background: 'rgba(15,16,19,0.78)',
+        color: '#CBD5E1',
         fontSize: '11px',
         cursor: 'pointer',
         display: 'flex',
@@ -858,7 +1401,7 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
       const r = video.getBoundingClientRect();
       el.style.display = 'flex';
       el.style.top = Math.max(8, r.top + 12) + 'px';
-      const w = el.offsetWidth || 148;
+      const w = el.offsetWidth || 152;
       el.style.left = Math.min(window.innerWidth - w - 8, r.right - w - 12) + 'px';
     }
 
@@ -901,10 +1444,10 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
       return null;
     }
 
-    function douyinName() {
+    function cleanPageTitle(fallback) {
       let t = (document.title || '').replace(/[\\\\/:*?"<>|]/g, '_').trim();
-      t = t.replace(/\\s*[-|_–—]\\s*抖音[^-]*$/, '').trim();
-      if (!t || /^抖音/.test(t)) t = 'douyin_' + Date.now();
+      t = t.replace(/\\s*[-|_–—]\\s*(抖音|小红书|YouTube|哔哩哔哩)[^-]*$/i, '').trim();
+      if (!t) t = fallback || 'video_' + Date.now();
       return t.slice(0, 80);
     }
 
@@ -929,28 +1472,42 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
       return location.href;
     }
 
-    function sendToBackground(item) {
-      try {
-        chrome.runtime.sendMessage({ type: 'send', items: [item] });
-      } catch (e) {}
-    }
-
-    function triggerDownload(video) {
+    function triggerDownloadPicker(video, anchorRect) {
       const host = location.hostname.replace(/^www\\./, '');
-      // 1) Douyin exact CDN URL via inject.js aweme map
+      const title = cleanPageTitle('video');
+      const vHeight = (video && video.videoHeight) || 0;
+      const vWidth = (video && video.videoWidth) || 0;
+      const vDuration = (video && Number.isFinite(video.duration) && video.duration > 0) ? video.duration : null;
+
+      // 1) Douyin: pass extracted multi-bitrate variants (1080p/720p/540p + exact MB sizes)
       if (/(^|\\.)douyin\\.com$/i.test(location.hostname)) {
         if (/(^|\\.)live\\.douyin\\.com$/i.test(location.hostname)) {
-          showToast('抖音直播暂不支持下载，请打开具体视频作品');
+          showToast('抖音直播暂不支持下载，请打开具体视频作品', 'error');
           return;
         }
         const id = douyinAwemeId(video);
+        const variants = (id && douyinVariantMap[id]) || [];
+        if (variants.length) {
+          openQualityPicker({
+            url: variants[0].url,
+            kind: 'http',
+            title,
+            referer: location.origin + '/',
+            duration: vDuration,
+            variants,
+          }, anchorRect);
+          return;
+        }
         if (id && douyinPlayMap[id] && douyinPlayMap[id].length) {
-          sendToBackground({
+          openQualityPicker({
             url: douyinPlayMap[id][0],
             kind: 'http',
-            filename: douyinName() + '.mp4',
+            title,
             referer: location.origin + '/',
-          });
+            height: vHeight,
+            width: vWidth,
+            duration: vDuration,
+          }, anchorRect);
           return;
         }
         chrome.runtime.sendMessage({ type: 'getSniffed' }, (resp) => {
@@ -958,50 +1515,122 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
           const vids = list.filter((r) => /(douyinvod|zjcdn|douyincdn)/i.test(r.url) && !/\\.mp3/i.test(r.url));
           const pick = vids[vids.length - 1];
           if (pick) {
-            sendToBackground({ url: pick.url, kind: 'http', filename: douyinName() + '.mp4', referer: location.origin + '/' });
+            openQualityPicker({
+              url: pick.url,
+              kind: 'http',
+              title,
+              referer: location.origin + '/',
+              height: vHeight,
+              width: vWidth,
+              duration: vDuration,
+            }, anchorRect);
           } else {
-            showToast('请让视频播放 1~2 秒后再点击「JoelDeskPro 下载」');
+            openQualityPicker({
+              url: location.href,
+              kind: 'video-platform',
+              title,
+              referer: location.href,
+              duration: vDuration,
+            }, anchorRect);
           }
         });
         return;
       }
 
-      // 2) Major video platforms
-      if (/(youtube\\.com|youtu\\.be|x\\.com|twitter\\.com|tiktok\\.com|reddit\\.com|bilibili\\.com|vimeo\\.com|twitch\\.tv)/i.test(host)) {
-        const postUrl = resolvePostUrl(video);
-        sendToBackground({
-          url: postUrl,
+      // 2) Xiaohongshu: pass extracted multi-quality streams or probe via desktop engine
+      if (/(^|\\.)xiaohongshu\\.com$/i.test(location.hostname)) {
+        if (xhsVariants.length) {
+          openQualityPicker({
+            url: xhsVariants[0].url,
+            kind: 'http',
+            title,
+            referer: location.href,
+            duration: vDuration,
+            variants: xhsVariants,
+          }, anchorRect);
+          return;
+        }
+        const src = (video && (video.currentSrc || video.src)) || '';
+        if (src && /^https?:/i.test(src)) {
+          openQualityPicker({
+            url: src,
+            kind: 'http',
+            title,
+            referer: location.href,
+            height: vHeight,
+            width: vWidth,
+            duration: vDuration,
+          }, anchorRect);
+          return;
+        }
+        openQualityPicker({
+          url: location.href,
           kind: 'video-platform',
-          filename: (document.title || 'video').replace(/[\\\\/:*?"<>|]/g, '_').slice(0, 80) + '.mp4',
-          referer: postUrl,
-        });
+          title,
+          referer: location.href,
+          duration: vDuration,
+        }, anchorRect);
         return;
       }
 
-      // 3) General sites: prefer sniffed m3u8 / mp4
+      // 3) Major video platforms (YouTube, Bilibili, TikTok, X, Vimeo, Twitch, Reddit, Instagram, Kuaishou, Weibo...)
+      if (/(youtube\\.com|youtu\\.be|x\\.com|twitter\\.com|tiktok\\.com|reddit\\.com|bilibili\\.com|b23\\.tv|vimeo\\.com|twitch\\.tv|instagram\\.com|facebook\\.com|kuaishou\\.com|weibo\\.com|dailymotion\\.com|youku\\.com|v\\.qq\\.com|iqiyi\\.com)/i.test(host)) {
+        const postUrl = resolvePostUrl(video);
+        openQualityPicker({
+          url: postUrl,
+          kind: 'video-platform',
+          title,
+          referer: postUrl,
+          duration: vDuration,
+        }, anchorRect);
+        return;
+      }
+
+      // 4) Any other site: prefer sniffed m3u8 / mpd / mp4, else video.src or page URL
       chrome.runtime.sendMessage({ type: 'getSniffed' }, (resp) => {
         const list = (resp && resp.items) || [];
         const pick =
           list.find((r) => /\\.(m3u8|mpd)/i.test(r.url) || r.kind === 'hls' || r.kind === 'dash') ||
           list.find((r) => /\\.(mp4|mkv|webm|mov)/i.test(r.url));
         if (pick) {
-          sendToBackground({
+          openQualityPicker({
             url: pick.url,
             kind: pick.kind || 'http',
-            filename: (document.title || 'video').replace(/[\\\\/:*?"<>|]/g, '_').slice(0, 80) + '.mp4',
+            title,
             referer: location.href,
-          });
+            height: vHeight,
+            width: vWidth,
+            duration: vDuration,
+            size: pick.size || null,
+          }, anchorRect);
         } else {
           const src = (video && (video.currentSrc || video.src)) || location.href;
-          sendToBackground({
+          openQualityPicker({
             url: src.startsWith('blob:') ? location.href : src,
             kind: src.startsWith('blob:') ? 'video-platform' : 'http',
-            filename: (document.title || 'video').replace(/[\\\\/:*?"<>|]/g, '_').slice(0, 80) + '.mp4',
+            title,
             referer: location.href,
-          });
+            height: vHeight,
+            width: vWidth,
+            duration: vDuration,
+          }, anchorRect);
         }
       });
     }
+
+    // Listen for context menu "OPEN_QUALITY_PICKER"
+    chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+      if (msg && msg.type === 'OPEN_QUALITY_PICKER') {
+        const target = overlayTarget || [...document.querySelectorAll('video')].find(isDownloadableVideo) || null;
+        if (msg.item && msg.item.url) {
+          openQualityPicker(msg.item, target ? target.getBoundingClientRect() : null);
+        } else {
+          triggerDownloadPicker(target, target ? target.getBoundingClientRect() : null);
+        }
+        reply && reply({ ok: true });
+        return true;
+      }
+    });
 
     let allVideos = [];
     const refreshVideos = () => {
@@ -1032,7 +1661,6 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
         lastMove = now;
         const v = videoUnderPoint(e.clientX, e.clientY);
         if (v) {
-          overlayCursor = { x: e.clientX, y: e.clientY };
           showOverlayFor(v);
         } else if (overlayEl && overlayEl.style.display !== 'none') {
           const o = overlayEl.getBoundingClientRect();
@@ -1060,18 +1688,18 @@ export function buildDeskKitChromeExtension(port: number, token: string, default
 `;
 
   const backgroundJs = `'use strict';
-// DeskKit MV3 Service Worker:
+// JoelDeskPro MV3 Service Worker (Desktop Client Bridge Only):
 // - Network resource sniffer (webRequest) + Toolbar Badge
-// - IDM-style configurable download takeover (downloads.onDeterminingFilename)
-// - Live browser Cookies extraction (youtube / douyin / bilibili / x...)
-// - Local HTTP Bridge (${endpoint})
+// - Universal quality & file-size probe -> POST http://127.0.0.1:${port}/api/bridge/probe
+// - Silent background download dispatch -> POST ${endpoint} (NEVER switches tabs or steals focus)
+// - Live browser Cookies extraction (YouTube / Douyin / Xiaohongshu / Bilibili / X...)
 const DESKKIT_ENDPOINT = '${endpoint}';
+const DESKKIT_PROBE_URL = 'http://127.0.0.1:${port}/api/bridge/probe';
 const DESKKIT_HEALTH_URL = 'http://127.0.0.1:${port}/api/health';
 const DESKKIT_TOKEN = '${token}';
-const DEFAULT_WEB_URL = ${JSON.stringify(normalizedWebUrl)};
 
-const VIDEO_PLATFORMS = /(^|\\.)(youtube\\.com|youtu\\.be|twitter\\.com|x\\.com|reddit\\.com|tiktok\\.com|vimeo\\.com|bilibili\\.com|facebook\\.com|instagram\\.com|twitch\\.tv)$/i;
-const COOKIE_HOSTS = /(^|\\.)(youtube\\.com|youtu\\.be|douyin\\.com|iesdouyin\\.com|bilibili\\.com|x\\.com|twitter\\.com|instagram\\.com|facebook\\.com|weibo\\.com)$/i;
+const VIDEO_PLATFORMS = /(^|\\.)(youtube\\.com|youtu\\.be|twitter\\.com|x\\.com|reddit\\.com|tiktok\\.com|vimeo\\.com|bilibili\\.com|b23\\.tv|facebook\\.com|instagram\\.com|twitch\\.tv|xiaohongshu\\.com|xhslink\\.com|kuaishou\\.com|weibo\\.com|dailymotion\\.com|youku\\.com|v\\.qq\\.com|iqiyi\\.com)$/i;
+const COOKIE_HOSTS = /(^|\\.)(youtube\\.com|youtu\\.be|douyin\\.com|iesdouyin\\.com|xiaohongshu\\.com|xhslink\\.com|bilibili\\.com|b23\\.tv|x\\.com|twitter\\.com|instagram\\.com|facebook\\.com|weibo\\.com|kuaishou\\.com|tiktok\\.com|vimeo\\.com|twitch\\.tv)$/i;
 const RES_EXT = /\\.(mp4|mkv|avi|mov|flv|webm|m4v|mp3|flac|wav|aac|m4a|ogg|opus|zip|rar|7z|tar|gz|xz|iso|exe|msi|dmg|apk|pdf|docx?|xlsx?|pptx?|epub|torrent)(\\?|$)/i;
 const MEDIA_MIME = /^(video|audio)\\//i;
 const STREAM_MIME = /(mpegurl|dash\\+xml)/i;
@@ -1090,8 +1718,6 @@ const CATEGORY_EXT = {
 
 const DEFAULT_SETTINGS = {
   takeover: true,
-  targetMode: 'auto', // 'auto' (local first, fallback web) | 'web' | 'local'
-  webAppUrl: DEFAULT_WEB_URL,
   categories: { video: true, audio: true, archive: true, program: true, document: true, model: true, other: true },
   customExt: [],
   minSize: 0,
@@ -1101,9 +1727,7 @@ const DEFAULT_SETTINGS = {
 let extSettings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
 const tabResources = new Map();
 const tabInfo = new Map();
-const webAppTabIds = new Set();
 const selfDownloadIds = new Set();
-let pendingWebItems = [];
 let activeTabId = -1;
 
 try {
@@ -1132,6 +1756,7 @@ function isVideoPlatformPage(url) {
     if (/tiktok\\.com$/i.test(u.hostname)) return /\\/video\\/|\\/@/.test(p);
     if (/(twitter|x)\\.com$/i.test(u.hostname)) return /\\/status\\//.test(p);
     if (/bilibili\\.com$/i.test(u.hostname)) return /\\/video\\//.test(p);
+    if (/xiaohongshu\\.com$/i.test(u.hostname)) return /\\/explore\\/|\\/discovery\\/item\\//.test(p);
     return p.length > 1;
   } catch (e) {
     return false;
@@ -1181,7 +1806,7 @@ function classify(mime, url) {
 function updateBadge(tabId) {
   const n = tabResources.get(tabId)?.size || 0;
   try {
-    chrome.action.setBadgeBackgroundColor({ color: '#2563EB' });
+    chrome.action.setBadgeBackgroundColor({ color: '#C89B2B' });
     const p = chrome.action.setBadgeText({ tabId, text: n ? String(Math.min(n, 99)) : '' });
     if (p && typeof p.catch === 'function') p.catch(() => {});
   } catch (e) {}
@@ -1231,7 +1856,7 @@ function syncTab(tabId, url, title) {
       mime: 'video/*',
       size: null,
       kind: 'video-platform',
-      tag: '在线视频',
+      tag: '可选画质',
       referer: url,
       ownerPage: pageKey(url),
     });
@@ -1301,7 +1926,6 @@ chrome.webNavigation?.onCommitted?.addListener?.((d) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   tabResources.delete(tabId);
   tabInfo.delete(tabId);
-  webAppTabIds.delete(tabId);
 });
 
 // Download takeover rules
@@ -1334,18 +1958,16 @@ function shouldIntercept(item) {
 function applyStored(r) {
   if (!r || typeof r !== 'object') return;
   if (typeof r.takeover === 'boolean') extSettings.takeover = r.takeover;
-  if (typeof r.targetMode === 'string') extSettings.targetMode = r.targetMode;
-  if (typeof r.webAppUrl === 'string' && r.webAppUrl) extSettings.webAppUrl = r.webAppUrl;
   if (r.categories) extSettings.categories = Object.assign({}, DEFAULT_SETTINGS.categories, r.categories);
   if (Array.isArray(r.customExt)) extSettings.customExt = r.customExt;
   if (typeof r.minSize === 'number') extSettings.minSize = r.minSize;
   if (Array.isArray(r.blacklist)) extSettings.blacklist = r.blacklist;
 }
 
-chrome.storage.local.get(['takeover', 'targetMode', 'webAppUrl', 'categories', 'customExt', 'minSize', 'blacklist'], applyStored);
+chrome.storage.local.get(['takeover', 'categories', 'customExt', 'minSize', 'blacklist'], applyStored);
 chrome.storage.onChanged.addListener((ch) => {
   const patch = {};
-  for (const k of ['takeover', 'targetMode', 'webAppUrl', 'categories', 'customExt', 'minSize', 'blacklist']) {
+  for (const k of ['takeover', 'categories', 'customExt', 'minSize', 'blacklist']) {
     if (ch[k]) patch[k] = ch[k].newValue;
   }
   applyStored(patch);
@@ -1372,9 +1994,9 @@ if (chrome.downloads && chrome.downloads.onDeterminingFilename) {
 
 function createMenus() {
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: 'deskkit-dl', title: '使用 JoelDeskPro 高速下载此链接', contexts: ['link', 'video', 'audio'] });
-    chrome.contextMenus.create({ id: 'deskkit-video', title: '使用 JoelDeskPro 下载当前视频', contexts: ['page'] });
-    chrome.contextMenus.create({ id: 'deskkit-all', title: '嗅探本页全部资源到 JoelDeskPro', contexts: ['page', 'action'] });
+    chrome.contextMenus.create({ id: 'deskkit-dl', title: '使用 JoelDeskPro 后台下载此链接', contexts: ['link', 'video', 'audio'] });
+    chrome.contextMenus.create({ id: 'deskkit-video', title: '使用 JoelDeskPro 选择画质下载当前视频', contexts: ['page'] });
+    chrome.contextMenus.create({ id: 'deskkit-all', title: '批量后台下载本页嗅探资源', contexts: ['page', 'action'] });
   });
 }
 chrome.runtime.onInstalled.addListener(createMenus);
@@ -1383,9 +2005,25 @@ createMenus();
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'deskkit-dl') {
     const url = info.linkUrl || info.srcUrl;
-    if (url) sendToDeskKit([{ url, filename: filenameFromUrl(url), referer: tab?.url || '' }]);
-  } else if (info.menuItemId === 'deskkit-video' && tab?.url) {
-    sendToDeskKit([{ url: tab.url, filename: sanitize(tab.title || 'video') + '.mp4', kind: 'video-platform', referer: tab.url }]);
+    if (url && tab && tab.id >= 0) {
+      chrome.tabs.sendMessage(
+        tab.id,
+        { type: 'OPEN_QUALITY_PICKER', item: { url, title: filenameFromUrl(url), kind: 'http', referer: tab.url || '' } },
+        () => {
+          if (chrome.runtime.lastError) {
+            sendToDeskKit([{ url, filename: filenameFromUrl(url), referer: tab.url || '' }]);
+          }
+        }
+      );
+    } else if (url) {
+      sendToDeskKit([{ url, filename: filenameFromUrl(url), referer: tab?.url || '' }]);
+    }
+  } else if (info.menuItemId === 'deskkit-video' && tab && tab.id >= 0) {
+    chrome.tabs.sendMessage(tab.id, { type: 'OPEN_QUALITY_PICKER' }, () => {
+      if (chrome.runtime.lastError && tab.url) {
+        sendToDeskKit([{ url: tab.url, filename: sanitize(tab.title || 'video') + '.mp4', kind: 'video-platform', referer: tab.url }]);
+      }
+    });
   } else if (info.menuItemId === 'deskkit-all' && tab) {
     const map = tabResources.get(tab.id);
     if (map && map.size) sendToDeskKit([...map.values()]);
@@ -1431,55 +2069,22 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     reply({ items: map ? [...map.values()] : [] });
     return true;
   }
-  if (msg.type === 'registerWebApp') {
-    if (tabId >= 0) {
-      webAppTabIds.add(tabId);
-      if (msg.url && /^https?:/i.test(msg.url)) {
-        extSettings.webAppUrl = msg.url.split('#')[0];
-        chrome.storage.local.set({ webAppUrl: extSettings.webAppUrl });
-      }
-      if (pendingWebItems.length) {
-        const queued = pendingWebItems.splice(0, pendingWebItems.length);
-        chrome.tabs.sendMessage(tabId, { type: 'DESKKIT_WEB_DISPATCH', items: queued }, () => {});
-      }
-    }
-    checkLocalOnline().then((localOnline) => {
-      reply && reply({ ok: true, localOnline, targetMode: extSettings.targetMode });
-    });
-    return true;
-  }
   if (msg.type === 'getBridgeStatus') {
-    Promise.all([checkLocalOnline(), findLiveWebAppTab()]).then(([localOnline, liveTab]) => {
-      reply && reply({
-        localOnline,
-        webConnected: Boolean(liveTab),
-        webAppUrl: extSettings.webAppUrl || DEFAULT_WEB_URL || '',
-        targetMode: extSettings.targetMode || 'auto',
-      });
+    checkLocalStatus().then((st) => {
+      reply && reply(st);
     });
     return true;
   }
-  if (msg.type === 'openWebApp') {
-    openOrFocusWebApp().then((ok) => reply && reply({ ok }));
-    return true;
-  }
-  if (msg.type === 'extDirectDownload' && msg.url) {
-    const cleanName = sanitize(msg.fileName || filenameFromUrl(msg.url));
-    chrome.downloads.download(
-      { url: msg.url, filename: cleanName, conflictAction: 'uniquify' },
-      (downloadId) => {
-        if (downloadId != null) {
-          selfDownloadIds.add(downloadId);
-          setTimeout(() => selfDownloadIds.delete(downloadId), 60000);
-        }
-        reply && reply({ ok: !chrome.runtime.lastError && downloadId != null, downloadId });
-      }
-    );
+  if (msg.type === 'probe') {
+    probeMedia(msg.item || {}).then((result) => {
+      reply && reply(result);
+    });
     return true;
   }
   if (msg.type === 'send') {
-    sendToDeskKit(msg.items || []);
-    reply && reply({ ok: true });
+    sendToDeskKit(msg.items || []).then((result) => {
+      reply && reply(result);
+    });
     return true;
   }
   if (msg.type === 'clear') {
@@ -1490,79 +2095,18 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   }
 });
 
-async function checkLocalOnline() {
+async function checkLocalStatus() {
   try {
     const ac = new AbortController();
     const t = setTimeout(() => ac.abort(), 900);
     const res = await fetch(DESKKIT_HEALTH_URL, { signal: ac.signal });
     clearTimeout(t);
-    return res.ok;
+    if (!res.ok) return { localOnline: false, saveDir: '' };
+    const data = await res.json().catch(() => ({}));
+    return { localOnline: true, saveDir: data.saveDir || '' };
   } catch (e) {
-    return false;
+    return { localOnline: false, saveDir: '' };
   }
-}
-
-async function findLiveWebAppTab() {
-  for (const tid of [...webAppTabIds]) {
-    try {
-      const tab = await chrome.tabs.get(tid);
-      if (tab && tab.id != null) return tab;
-    } catch (e) {
-      webAppTabIds.delete(tid);
-    }
-  }
-  const targetUrl = extSettings.webAppUrl || DEFAULT_WEB_URL;
-  if (targetUrl) {
-    try {
-      const origin = new URL(targetUrl).origin;
-      const tabs = await chrome.tabs.query({ url: origin + '/*' });
-      if (tabs && tabs.length) {
-        webAppTabIds.add(tabs[0].id);
-        return tabs[0];
-      }
-    } catch (e) {}
-  }
-  return null;
-}
-
-async function openOrFocusWebApp() {
-  const existing = await findLiveWebAppTab();
-  if (existing) {
-    await chrome.tabs.update(existing.id, { active: true });
-    if (existing.windowId != null) {
-      chrome.windows.update(existing.windowId, { focused: true }).catch(() => {});
-    }
-    return true;
-  }
-  const url = extSettings.webAppUrl || DEFAULT_WEB_URL;
-  if (!url) return false;
-  await chrome.tabs.create({ url });
-  return true;
-}
-
-async function deliverToWebApp(payload, focusTab) {
-  const liveTab = await findLiveWebAppTab();
-  if (liveTab) {
-    return new Promise((resolve) => {
-      chrome.tabs.sendMessage(liveTab.id, { type: 'DESKKIT_WEB_DISPATCH', items: payload }, (resp) => {
-        if (chrome.runtime.lastError) {
-          resolve(false);
-          return;
-        }
-        if (focusTab) {
-          chrome.tabs.update(liveTab.id, { active: true }).catch(() => {});
-        }
-        resolve(Boolean(resp && resp.ok));
-      });
-    });
-  }
-  const url = extSettings.webAppUrl || DEFAULT_WEB_URL;
-  if (url) {
-    pendingWebItems.push(...payload);
-    await chrome.tabs.create({ url });
-    return true;
-  }
-  return false;
 }
 
 function getCookiesForUrl(url) {
@@ -1576,10 +2120,70 @@ function getCookiesForUrl(url) {
         const byDomain = chrome.runtime.lastError ? [] : (b || []);
         const map = new Map();
         for (const c of [...byUrl, ...byDomain]) map.set(c.name + '|' + c.domain + '|' + c.path, c);
-        resolve([...map.values()].map((c) => ({ name: c.name, value: c.value, domain: c.domain, path: c.path, secure: c.secure, httpOnly: c.httpOnly })));
+        resolve([...map.values()].map((c) => ({
+          name: c.name,
+          value: c.value,
+          domain: c.domain,
+          path: c.path,
+          secure: c.secure,
+          httpOnly: c.httpOnly,
+          expirationDate: c.expirationDate,
+        })));
       });
     });
   });
+}
+
+async function attachCookiesIfNeeded(url, referer) {
+  const target = referer && COOKIE_HOSTS.test((() => { try { return new URL(referer).hostname; } catch { return ''; } })())
+    ? referer
+    : url;
+  try {
+    const host = new URL(target).hostname;
+    if (COOKIE_HOSTS.test(host)) {
+      const cks = await getCookiesForUrl(target);
+      if (cks && cks.length) return cks;
+    }
+  } catch (e) {}
+  return null;
+}
+
+async function probeMedia(item) {
+  const url = item && item.url ? String(item.url) : '';
+  if (!url) return { ok: false, clientOnline: false, error: 'Missing URL' };
+  const cookies = await attachCookiesIfNeeded(url, item.referer || '');
+  const body = {
+    url,
+    title: item.title || item.filename || item.fileName || '',
+    kind: item.kind || 'http',
+    referer: item.referer || '',
+    height: item.height || 0,
+    width: item.width || 0,
+    duration: item.duration || null,
+    size: item.size || null,
+    variants: Array.isArray(item.variants) ? item.variants : undefined,
+    cookies: cookies || undefined,
+  };
+
+  try {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 24000);
+    const res = await fetch(DESKKIT_PROBE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-DeskKit-Token': DESKKIT_TOKEN,
+      },
+      body: JSON.stringify(body),
+      signal: ac.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) return { ok: false, clientOnline: true, error: 'HTTP ' + res.status };
+    const data = await res.json();
+    return { ...data, clientOnline: true };
+  } catch (e) {
+    return { ok: false, clientOnline: false, error: 'Client offline' };
+  }
 }
 
 async function sendToDeskKit(items) {
@@ -1594,70 +2198,45 @@ async function sendToDeskKit(items) {
         size: it.size || null,
         referer: it.referer || '',
         userAgent: navigator.userAgent,
+        formatId: it.formatId || '',
+        qualityLabel: it.qualityLabel || '',
+        audioOnly: Boolean(it.audioOnly),
+        ext: it.ext || '',
       };
-      try {
-        if (COOKIE_HOSTS.test(new URL(it.url).hostname)) {
-          const cks = await getCookiesForUrl(it.url);
-          if (cks && cks.length) {
-            o.cookies = cks;
-            o.hasCookies = true;
-          }
-        }
-      } catch (e) {}
+      const cks = await attachCookiesIfNeeded(it.url, it.referer || '');
+      if (cks && cks.length) {
+        o.cookies = cks;
+        o.hasCookies = true;
+      }
       return o;
     })
   );
 
-  const mode = extSettings.targetMode || 'auto';
-  let sentToLocal = false;
-
-  // 1) Try Local Desktop Engine if mode is 'auto' or 'local'
-  if (mode === 'auto' || mode === 'local') {
-    try {
-      const ac = new AbortController();
-      const t = setTimeout(() => ac.abort(), 1400);
-      const res = await fetch(DESKKIT_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-DeskKit-Token': DESKKIT_TOKEN,
-        },
-        body: JSON.stringify(payload.length === 1 ? payload[0] : { items: payload }),
-        signal: ac.signal,
-      });
-      clearTimeout(t);
-      if (res.ok) sentToLocal = true;
-    } catch (e) {
-      sentToLocal = false;
+  try {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), 2000);
+    const res = await fetch(DESKKIT_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-DeskKit-Token': DESKKIT_TOKEN,
+      },
+      body: JSON.stringify(payload.length === 1 ? payload[0] : { items: payload }),
+      signal: ac.signal,
+    });
+    clearTimeout(t);
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const label = payload.length === 1
+        ? (payload[0].qualityLabel ? '[' + payload[0].qualityLabel + '] ' : '') + payload[0].fileName
+        : payload.length + ' 个资源';
+      notify('已开始后台下载（不跳转页面）', label);
+      return { ok: true, clientOnline: true, count: payload.length, saveDir: data.saveDir || '' };
     }
-  }
+  } catch (e) {}
 
-  if (sentToLocal) {
-    // Also mirror into any already-open DeskKit Web tab (marked handledByLocal so Web won't double-download)
-    const liveTab = await findLiveWebAppTab();
-    if (liveTab) {
-      const mirrored = payload.map((p) => Object.assign({}, p, { handledByLocal: true }));
-      chrome.tabs.sendMessage(liveTab.id, { type: 'DESKKIT_WEB_DISPATCH', items: mirrored }, () => {});
-    }
-    notify('已发送到 Joel Desk Pro 本地引擎', payload.length === 1 ? payload[0].fileName : payload.length + ' 个资源');
-    return;
-  }
-
-  // 2) Route to Joel Desk Pro Published Web App when mode is 'web' or 'auto' (local offline)
-  if (mode === 'web' || mode === 'auto') {
-    const sentToWeb = await deliverToWebApp(payload, true);
-    if (sentToWeb) {
-      notify('已发送到 Joel Desk Pro 网页端', payload.length === 1 ? payload[0].fileName : payload.length + ' 个资源');
-      return;
-    }
-  }
-
-  notify(
-    '未检测到 Joel Desk Pro 连接',
-    mode === 'local'
-      ? '请先启动本地引擎（端口 ${port}），或在弹窗中切换到「自动 / 网页端」'
-      : '请先打开一次 Joel Desk Pro 网页端或启动本地引擎'
-  );
+  notify('未检测到 Joel Desk Pro 客户端', '请先打开 Joel Desk Pro 桌面客户端（端口 ${port}）');
+  return { ok: false, clientOnline: false, count: 0 };
 }
 
 function notify(title, message) {
@@ -1672,97 +2251,122 @@ function notify(title, message) {
 <head>
 <meta charset="UTF-8">
 <style>
-  body { width: 360px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 12px; background: #F8F9FA; color: #0F172A; }
-  .head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; background: #FFFFFF; border-bottom: 1px solid #E5E7EB; }
-  .head h1 { font-size: 14px; font-weight: 600; margin: 0; flex: 1; }
-  .head button { background: #F3F4F6; border: none; color: #475569; padding: 5px 10px; border-radius: 10px; cursor: pointer; font-size: 11px; font-weight: 500; }
-  .head button:hover { background: #E5E7EB; color: #0F172A; }
-  .takeover-row { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #FFFFFF; border-bottom: 1px solid #E5E7EB; color: #334155; }
-  .takeover-row input { width: 15px; height: 15px; accent-color: #2563EB; cursor: pointer; }
-  .takeover-row label { flex: 1; cursor: pointer; }
-  .gear { background: #F3F4F6; border: none; cursor: pointer; font-size: 13px; padding: 4px 8px; color: #475569; border-radius: 10px; }
-  .gear:hover { background: #E5E7EB; color: #0F172A; }
-  .settings { display: none; padding: 12px 14px; background: #FCFDFE; border-bottom: 1px solid #E5E7EB; }
+  body { width: 372px; margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 12px; background: #111215; color: #F8FAFC; }
+  .head { display: flex; align-items: center; gap: 8px; padding: 11px 14px; background: linear-gradient(135deg, #17181C 0%, #0D0E10 100%); border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .logo { width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(135deg, #F3D98B 0%, #C89B2B 100%); color: #0B0B0D; font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .head h1 { font-size: 13.5px; font-weight: 700; margin: 0; flex: 1; color: #F5E1A4; }
+  .head button { background: rgba(255,255,255,0.07); border: none; color: #CBD5E1; padding: 5px 10px; border-radius: 8px; cursor: pointer; font-size: 11px; font-weight: 500; }
+  .head button:hover { background: rgba(255,255,255,0.14); color: #fff; }
+  .bridge-bar { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 7px 14px; background: #0D0E10; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 11px; color: #94A3B8; }
+  .bridge-status { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 9999px; background: #64748B; flex-shrink: 0; }
+  .dot.on { background: #22C55E; }
+  .port-tag { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; color: #64748B; flex-shrink: 0; }
+  .takeover-row { display: flex; align-items: center; gap: 8px; padding: 9px 14px; background: #14161A; border-bottom: 1px solid rgba(255,255,255,0.06); color: #CBD5E1; }
+  .takeover-row input { width: 14px; height: 14px; accent-color: #D4AF37; cursor: pointer; }
+  .takeover-row label { flex: 1; cursor: pointer; font-size: 11.5px; }
+  .gear { background: rgba(255,255,255,0.07); border: none; cursor: pointer; font-size: 12px; padding: 4px 8px; color: #CBD5E1; border-radius: 8px; }
+  .gear:hover { background: rgba(255,255,255,0.14); color: #fff; }
+  .settings { display: none; padding: 11px 14px; background: #0F1013; border-bottom: 1px solid rgba(255,255,255,0.08); }
   .settings.open { display: block; }
-  .settings h2 { font-size: 11px; color: #64748B; margin: 0 0 8px; font-weight: 600; }
+  .settings h2 { font-size: 11px; color: #94A3B8; margin: 0 0 8px; font-weight: 600; }
   .cats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin-bottom: 10px; }
-  .cats label { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
-  .cats input { accent-color: #2563EB; }
+  .cats label { display: flex; align-items: center; gap: 6px; font-size: 11.5px; cursor: pointer; color: #E2E8F0; }
+  .cats input { accent-color: #D4AF37; }
   .custom-row { margin-bottom: 8px; }
-  .custom-row label { display: block; font-size: 11px; color: #64748B; margin-bottom: 4px; }
-  .custom-row input, .custom-row textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #E5E7EB; border-radius: 10px; font-size: 12px; background: #FFFFFF; }
-  .size-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; color: #475569; }
-  .size-row input { width: 56px; padding: 4px 6px; border: 1px solid #E5E7EB; border-radius: 8px; font-size: 12px; }
-  .saved { font-size: 11px; color: #16A34A; height: 14px; }
-  .bridge-bar { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px 14px; background: #F8FAFC; border-bottom: 1px solid #E5E7EB; font-size: 11px; color: #475569; }
-  .bridge-status { display: flex; align-items: center; gap: 8px; }
-  .dot { display: inline-block; width: 6px; height: 6px; border-radius: 9999px; background: #CBD5E1; margin-right: 4px; vertical-align: middle; }
-  .dot.on { background: #16A34A; }
-  .bridge-ctrl { display: flex; align-items: center; gap: 6px; }
-  .bridge-ctrl select { border: 1px solid #E5E7EB; background: #FFFFFF; border-radius: 8px; padding: 3px 6px; font-size: 11px; color: #0F172A; }
-  .bridge-ctrl button { border: 1px solid #E5E7EB; background: #FFFFFF; border-radius: 8px; padding: 3px 8px; font-size: 11px; color: #2563EB; cursor: pointer; font-weight: 500; }
-  .bridge-ctrl button:hover { border-color: #2563EB; }
-  .list { max-height: 300px; overflow-y: auto; }
-  .item { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid #E5E7EB; background: #FFFFFF; }
-  .item:hover { background: #F8FAFC; }
-  .item input { accent-color: #2563EB; }
-  .meta { flex: 1; min-width: 0; }
-  .fn { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .sub { color: #64748B; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
-  .tag { font-size: 10px; padding: 2px 7px; border-radius: 8px; background: #EFF6FF; color: #2563EB; white-space: nowrap; font-weight: 600; }
-  .empty { padding: 28px 16px; text-align: center; color: #64748B; line-height: 1.6; }
-  .foot { display: flex; gap: 8px; padding: 12px 14px; background: #F8F9FA; }
-  .foot button { flex: 1; padding: 8px 12px; border: 1px solid #E5E7EB; border-radius: 12px; background: #FFFFFF; color: #0F172A; cursor: pointer; font-weight: 600; font-size: 12px; }
-  .foot button.primary { background: #2563EB; color: #FFFFFF; border-color: #2563EB; }
-  .foot button.primary:hover { background: #1D4ED8; }
+  .custom-row label { display: block; font-size: 11px; color: #94A3B8; margin-bottom: 4px; }
+  .custom-row input, .custom-row textarea { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; font-size: 11.5px; background: #181A1F; color: #F8FAFC; }
+  .size-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; color: #94A3B8; }
+  .size-row input { width: 54px; padding: 4px 6px; border: 1px solid rgba(255,255,255,0.12); border-radius: 7px; font-size: 11.5px; background: #181A1F; color: #F8FAFC; }
+  .saved { font-size: 11px; color: #4ADE80; height: 14px; }
+  .list { max-height: 280px; overflow-y: auto; }
+  .item { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.06); background: #111215; }
+  .item:hover { background: #181A20; }
+  .item input { accent-color: #D4AF37; }
+  .meta { flex: 1; min-width: 0; cursor: pointer; }
+  .fn { font-weight: 600; color: #F1F5F9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub { color: #94A3B8; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+  .pick-btn { border: 1px solid rgba(212,175,55,0.45); background: rgba(212,175,55,0.14); color: #F5E1A4; font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+  .pick-btn:hover { background: #D4AF37; color: #0B0B0D; }
+  .empty { padding: 26px 16px; text-align: center; color: #94A3B8; line-height: 1.6; }
+  .foot { display: flex; gap: 8px; padding: 11px 14px; background: #0D0E10; border-top: 1px solid rgba(255,255,255,0.07); }
+  .foot button { flex: 1; padding: 8px 12px; border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; background: #181A1F; color: #E2E8F0; cursor: pointer; font-weight: 600; font-size: 12px; }
+  .foot button:hover { background: #22252C; }
+  .foot button.primary { background: linear-gradient(135deg, #F3D98B 0%, #C89B2B 100%); color: #0B0B0D; border-color: transparent; font-weight: 700; }
+  .foot button.primary:hover { opacity: 0.92; }
+  .status-banner { display: none; padding: 8px 14px; font-size: 11.5px; font-weight: 600; background: rgba(22,163,74,0.16); color: #86EFAC; border-bottom: 1px solid rgba(22,163,74,0.3); }
+  .status-banner.err { background: rgba(239,68,68,0.16); color: #FCA5A5; border-bottom-color: rgba(239,68,68,0.3); }
+  /* Inline Quality Picker View */
+  .picker { display: none; flex-direction: column; }
+  .picker.open { display: flex; }
+  .picker-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #15171C; border-bottom: 1px solid rgba(255,255,255,0.07); }
+  .back-btn { border: none; background: rgba(255,255,255,0.08); color: #E2E8F0; border-radius: 7px; padding: 4px 8px; cursor: pointer; font-size: 11px; }
+  .back-btn:hover { background: rgba(255,255,255,0.15); }
+  .picker-title { flex: 1; min-width: 0; font-weight: 600; color: #F8FAFC; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .picker-plat { font-size: 10px; padding: 2px 6px; border-radius: 6px; background: rgba(212,175,55,0.16); color: #E5C466; font-weight: 600; }
+  .q-list { max-height: 240px; overflow-y: auto; padding: 8px 10px; display: flex; flex-direction: column; gap: 5px; }
+  .q-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); cursor: pointer; }
+  .q-row:hover { border-color: rgba(212,175,55,0.45); background: rgba(212,175,55,0.1); }
+  .q-label { font-weight: 700; color: #F8FAFC; font-size: 12.5px; }
+  .q-note { font-size: 10px; color: #94A3B8; background: rgba(255,255,255,0.07); padding: 1px 6px; border-radius: 5px; }
+  .q-size { margin-left: auto; font-weight: 600; color: #E5C466; font-variant-numeric: tabular-nums; font-size: 11.5px; }
+  .q-dl { border: none; border-radius: 7px; padding: 4px 9px; background: linear-gradient(135deg, #F3D98B 0%, #C89B2B 100%); color: #0B0B0D; font-weight: 700; font-size: 11px; cursor: pointer; }
+  .q-msg { padding: 22px 14px; text-align: center; color: #94A3B8; font-size: 12px; }
+  .picker-foot { padding: 8px 14px 10px; font-size: 10.5px; color: #94A3B8; background: #0D0E10; border-top: 1px solid rgba(255,255,255,0.07); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
 </head>
 <body>
   <div class="head">
-    <h1>JoelDeskPro 嗅探到的资源</h1>
+    <div class="logo">J</div>
+    <h1>JoelDeskPro</h1>
     <button id="clear">清空</button>
   </div>
   <div class="bridge-bar">
     <div class="bridge-status">
-      <span><i id="dotWeb" class="dot"></i>网页端</span>
-      <span><i id="dotLocal" class="dot"></i>本地端</span>
+      <i id="dotLocal" class="dot"></i>
+      <span id="clientText">正在检测桌面客户端…</span>
     </div>
-    <div class="bridge-ctrl">
-      <select id="targetMode" title="选择接收端">
-        <option value="auto">自动双通道</option>
-        <option value="web">仅网页端</option>
-        <option value="local">仅本地端</option>
-      </select>
-      <button id="openWeb">打开网页</button>
+    <span class="port-tag">127.0.0.1:${port}</span>
+  </div>
+  <div id="statusBanner" class="status-banner"></div>
+  <div id="mainView">
+    <div class="takeover-row">
+      <input type="checkbox" id="takeover" checked>
+      <label for="takeover">接管浏览器下载（后台分片提速，不跳转）</label>
+      <button class="gear" id="gear" title="接管规则设置">⚙</button>
+    </div>
+    <div class="settings" id="settings">
+      <h2>接管以下类型的下载</h2>
+      <div class="cats" id="cats"></div>
+      <div class="custom-row">
+        <label for="customExt">自定义扩展名（逗号分隔，如 psd, apk）</label>
+        <input type="text" id="customExt" placeholder="留空则不额外接管">
+      </div>
+      <div class="size-row">
+        <span>仅接管大于</span>
+        <input type="number" id="minSize" min="0" step="1" value="0">
+        <span>MB 的文件（0 = 不限）</span>
+      </div>
+      <div class="custom-row">
+        <label for="blacklist">网站黑名单（不嗅探、不接管）</label>
+        <textarea id="blacklist" rows="2" placeholder="如 bank.com, company.internal"></textarea>
+      </div>
+      <div class="saved" id="saved"></div>
+    </div>
+    <div id="list" class="list"></div>
+    <div class="foot">
+      <button id="selAll">全选</button>
+      <button id="send" class="primary">后台下载所选</button>
     </div>
   </div>
-  <div class="takeover-row">
-    <input type="checkbox" id="takeover" checked>
-    <label for="takeover">接管浏览器下载（自动转 Joel Desk Pro 分片提速）</label>
-    <button class="gear" id="gear" title="接管规则设置">⚙</button>
-  </div>
-  <div class="settings" id="settings">
-    <h2>接管以下类型的下载</h2>
-    <div class="cats" id="cats"></div>
-    <div class="custom-row">
-      <label for="customExt">自定义扩展名（逗号分隔，如 psd, apk）</label>
-      <input type="text" id="customExt" placeholder="留空则不额外接管">
+  <div id="pickerView" class="picker">
+    <div class="picker-head">
+      <button id="pickerBack" class="back-btn">← 返回</button>
+      <div id="pickerTitle" class="picker-title">解析画质中…</div>
+      <span id="pickerPlat" class="picker-plat">检测中</span>
     </div>
-    <div class="size-row">
-      <span>仅接管大于</span>
-      <input type="number" id="minSize" min="0" step="1" value="0">
-      <span>MB 的文件（0 = 不限）</span>
-    </div>
-    <div class="custom-row">
-      <label for="blacklist">网站黑名单（不嗅探、不接管）</label>
-      <textarea id="blacklist" rows="2" placeholder="如 bank.com, company.internal"></textarea>
-    </div>
-    <div class="saved" id="saved"></div>
-  </div>
-  <div id="list" class="list"></div>
-  <div class="foot">
-    <button id="selAll">全选</button>
-    <button id="send" class="primary">发送到 Joel Desk Pro</button>
+    <div id="qList" class="q-list"></div>
+    <div id="pickerFoot" class="picker-foot">后台静默下载，不会跳转页面</div>
   </div>
   <script src="popup.js"></script>
 </body>
@@ -1770,38 +2374,133 @@ function notify(title, message) {
 `;
 
   const popupJs = `'use strict';
-function fmtSize(b) {
-  if (b == null) return '未知大小';
+function fmtSize(b, est) {
+  if (!b || !Number.isFinite(b) || b <= 0) return '大小未知';
   const u = ['B', 'KB', 'MB', 'GB'];
   let i = 0, n = b;
   while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
-  return n.toFixed(i ? 1 : 0) + ' ' + u[i];
+  return (est ? '约 ' : '') + n.toFixed(i >= 2 ? 1 : 0) + ' ' + u[i];
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 let resources = [];
 let tabId = null;
+let clientSaveDir = '';
 const selection = new Map();
 const listEl = document.getElementById('list');
+const mainView = document.getElementById('mainView');
+const pickerView = document.getElementById('pickerView');
+const pickerTitle = document.getElementById('pickerTitle');
+const pickerPlat = document.getElementById('pickerPlat');
+const qList = document.getElementById('qList');
+const pickerFoot = document.getElementById('pickerFoot');
+const statusBanner = document.getElementById('statusBanner');
+
+function showBanner(msg, isErr) {
+  statusBanner.textContent = msg;
+  statusBanner.className = 'status-banner' + (isErr ? ' err' : '');
+  statusBanner.style.display = 'block';
+}
 
 function sig(list) { return list.map((r) => r.url).join('|'); }
+
+function openInlinePicker(res) {
+  mainView.style.display = 'none';
+  pickerView.classList.add('open');
+  pickerTitle.textContent = res.filename || '解析中…';
+  pickerPlat.textContent = '解析中';
+  qList.innerHTML = '<div class="q-msg">正在解析该视频支持的画质与文件大小…</div>';
+  pickerFoot.textContent = clientSaveDir ? '保存至: ' + clientSaveDir + ' · 后台下载不跳转' : '后台静默下载，不会跳转页面';
+
+  chrome.runtime.sendMessage({
+    type: 'probe',
+    item: {
+      url: res.url,
+      title: (res.filename || '').replace(/\\.[a-z0-9]{2,5}$/i, ''),
+      kind: res.kind || 'http',
+      referer: res.referer || '',
+      size: res.size || null,
+    },
+  }, (resp) => {
+    if (chrome.runtime.lastError || !resp || !resp.clientOnline) {
+      pickerPlat.textContent = '未连接';
+      qList.innerHTML = '<div class="q-msg">未检测到 Joel Desk Pro 客户端（127.0.0.1:${port}），请先启动客户端。</div>';
+      return;
+    }
+    const title = resp.title || res.filename || 'video';
+    pickerTitle.textContent = title;
+    pickerPlat.textContent = resp.platform || 'Video';
+    if (resp.saveDir) pickerFoot.textContent = '保存至: ' + resp.saveDir + ' · 后台下载不跳转';
+    const formats = Array.isArray(resp.formats) ? resp.formats : [];
+    if (!formats.length) {
+      qList.innerHTML = '<div class="q-msg">未能解析出可用画质。</div>';
+      return;
+    }
+    qList.innerHTML = '';
+    formats.forEach((f) => {
+      const row = document.createElement('div');
+      row.className = 'q-row';
+      row.innerHTML = \`
+        <span class="q-label">\${esc(f.label)}</span>
+        \${f.note ? '<span class="q-note">' + esc(f.note) + '</span>' : ''}
+        <span class="q-size">\${esc(fmtSize(f.sizeBytes, f.estimated))}</span>
+        <button type="button" class="q-dl">下载</button>
+      \`;
+      const trigger = () => {
+        const cleanTitle = title.replace(/[\\\\/:*?"<>|]+/g, '_').trim().slice(0, 80) || 'video';
+        const ext = f.ext || (f.audioOnly ? 'mp3' : 'mp4');
+        chrome.runtime.sendMessage({
+          type: 'send',
+          items: [{
+            url: f.url || res.url,
+            kind: f.kind || res.kind || 'http',
+            filename: cleanTitle + '.' + ext,
+            referer: res.referer || '',
+            formatId: f.formatId || '',
+            qualityLabel: f.label || '',
+            audioOnly: Boolean(f.audioOnly),
+            ext,
+            size: f.sizeBytes || null,
+          }],
+        }, (sendResp) => {
+          if (sendResp && sendResp.ok) {
+            showBanner('✓ 已开始后台下载：' + f.label + '（无需跳转页面）', false);
+            setTimeout(() => window.close(), 1200);
+          } else {
+            showBanner('未检测到桌面客户端，请先启动 Joel Desk Pro', true);
+          }
+        });
+      };
+      row.onclick = trigger;
+      row.querySelector('.q-dl').onclick = (e) => { e.stopPropagation(); trigger(); };
+      qList.appendChild(row);
+    });
+  });
+}
 
 function draw() {
   listEl.innerHTML = '';
   if (!resources.length) {
-    listEl.innerHTML = '<div class="empty">当前页面暂未嗅探到资源。<br>播放视频或等待播放器加载后即可一键下载。</div>';
+    listEl.innerHTML = '<div class="empty">当前页面暂未嗅探到资源。<br>播放视频或悬停视频右上角即可弹出画质选择小窗。</div>';
     return;
   }
   resources.forEach((r) => {
     const div = document.createElement('div');
     div.className = 'item';
     const checked = selection.get(r.url) ? 'checked' : '';
+    const isMedia = r.kind === 'video-platform' || r.kind === 'hls' || r.kind === 'dash' || /视频|画质/.test(r.tag || '');
     div.innerHTML = \`
       <input type="checkbox" data-url="\${encodeURIComponent(r.url)}" \${checked}>
       <div class="meta">
-        <div class="fn" title="\${r.filename}">\${r.filename}</div>
-        <div class="sub" title="\${r.url}">\${fmtSize(r.size)} · \${r.url}</div>
+        <div class="fn" title="\${esc(r.filename)}">\${esc(r.filename)}</div>
+        <div class="sub" title="\${esc(r.url)}">\${r.size ? fmtSize(r.size) + ' · ' : ''}\${esc(r.tag || '文件')}</div>
       </div>
-      <span class="tag">\${r.tag || '文件'}</span>\`;
+      <button type="button" class="pick-btn">\${isMedia ? '选画质' : '下载'}</button>\`;
+    div.querySelector('.meta').onclick = () => openInlinePicker(r);
+    div.querySelector('.pick-btn').onclick = () => openInlinePicker(r);
     listEl.appendChild(div);
   });
   listEl.querySelectorAll('input[type=checkbox]').forEach((cb) => {
@@ -1813,6 +2512,11 @@ async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   tabId = tab.id;
   let lastSig = null;
+
+  document.getElementById('pickerBack').onclick = () => {
+    pickerView.classList.remove('open');
+    mainView.style.display = 'block';
+  };
 
   const load = () => chrome.runtime.sendMessage({ type: 'getResources', tabId }, (resp) => {
     const next = (resp && resp.resources) || [];
@@ -1831,7 +2535,19 @@ async function init() {
   document.getElementById('send').onclick = () => {
     const items = resources.filter((r) => selection.get(r.url));
     if (!items.length) return;
-    chrome.runtime.sendMessage({ type: 'send', items }, () => window.close());
+    // If user selected 1 video item, open quality picker directly!
+    if (items.length === 1 && (items[0].kind === 'video-platform' || items[0].kind === 'hls' || items[0].kind === 'dash')) {
+      openInlinePicker(items[0]);
+      return;
+    }
+    chrome.runtime.sendMessage({ type: 'send', items }, (resp) => {
+      if (resp && resp.ok) {
+        showBanner('✓ 已将 ' + items.length + ' 个任务加入后台下载', false);
+        setTimeout(() => window.close(), 1100);
+      } else {
+        showBanner('未检测到桌面客户端，请先打开 Joel Desk Pro', true);
+      }
+    });
   };
   document.getElementById('selAll').onclick = () => {
     const allSel = resources.length > 0 && resources.every((r) => selection.get(r.url));
@@ -1855,24 +2571,18 @@ async function init() {
   const minSizeEl = document.getElementById('minSize');
   const blacklistEl = document.getElementById('blacklist');
   const savedEl = document.getElementById('saved');
-  const targetModeEl = document.getElementById('targetMode');
-  const dotWebEl = document.getElementById('dotWeb');
   const dotLocalEl = document.getElementById('dotLocal');
-  const openWebBtn = document.getElementById('openWeb');
+  const clientTextEl = document.getElementById('clientText');
 
   chrome.runtime.sendMessage({ type: 'getBridgeStatus' }, (st) => {
-    if (!st) return;
-    if (st.webConnected) dotWebEl.classList.add('on');
-    if (st.localOnline) dotLocalEl.classList.add('on');
-    if (st.targetMode) targetModeEl.value = st.targetMode;
+    if (st && st.localOnline) {
+      dotLocalEl.classList.add('on');
+      clientSaveDir = st.saveDir || '';
+      clientTextEl.textContent = '桌面客户端已连接（后台静默下载）';
+    } else {
+      clientTextEl.textContent = '未检测到桌面客户端（请先打开）';
+    }
   });
-
-  targetModeEl.onchange = () => {
-    chrome.storage.local.set({ targetMode: targetModeEl.value });
-  };
-  openWebBtn.onclick = () => {
-    chrome.runtime.sendMessage({ type: 'openWebApp' }, () => window.close());
-  };
 
   for (const cat of CATEGORY_ORDER) {
     const lab = document.createElement('label');
@@ -1891,16 +2601,15 @@ async function init() {
     const customExt = customEl.value.split(/[,，\\s]+/).map((s) => s.trim().replace(/^\\./, '').toLowerCase()).filter(Boolean);
     const minSize = Math.max(0, parseInt(minSizeEl.value, 10) || 0);
     const blacklist = blacklistEl.value.split(/[,，\\s\\n]+/).map((s) => s.trim().toLowerCase().replace(/^https?:\\/\\//, '').replace(/\\/.*$/, '')).filter(Boolean);
-    chrome.storage.local.set({ takeover: tk.checked, targetMode: targetModeEl.value, categories, customExt, minSize, blacklist }, () => {
+    chrome.storage.local.set({ takeover: tk.checked, categories, customExt, minSize, blacklist }, () => {
       savedEl.textContent = '✓ 已保存';
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => { savedEl.textContent = ''; }, 1200);
     });
   }
 
-  chrome.storage.local.get(['takeover','targetMode','categories','customExt','minSize','blacklist'], (r) => {
+  chrome.storage.local.get(['takeover','categories','customExt','minSize','blacklist'], (r) => {
     tk.checked = typeof r.takeover === 'boolean' ? r.takeover : DEFAULTS.takeover;
-    if (typeof r.targetMode === 'string') targetModeEl.value = r.targetMode;
     const cats = Object.assign({}, DEFAULTS.categories, r.categories || {});
     catsEl.querySelectorAll('input[data-cat]').forEach((cb) => { cb.checked = !!cats[cb.dataset.cat]; });
     customEl.value = Array.isArray(r.customExt) ? r.customExt.join(', ') : '';
@@ -1918,17 +2627,14 @@ async function init() {
 init();
 `;
 
-  const readmeTxt = `JoelDeskPro 浏览器插件（Joel Desk Pro 网页端 + 本地端双通道）
+  const readmeTxt = `JoelDeskPro Chrome 插件（配合 Joel Desk Pro 桌面客户端使用）
 ============================================================
 1. 右键 joeldeskpro-chrome-extension.zip -> 全部解压缩到任意文件夹（如 Downloads\\joeldeskpro-chrome-extension）。
    注意：manifest.json 就在解压后的第一层目录里，无需再往里点一层！
 2. 在 Chrome 地址栏打开：chrome://extensions
 3. 打开右上角「开发者模式」。
-4. 点击左上角「加载已解压的扩展程序」，直接选择解压出来的文件夹即可成功安装！
-
-双通道说明：
-- 网页端直用：打开已发布的 Joel Desk Pro 网页端，插件会自动握手注册，看视频右上角点击「JoelDeskPro 下载」即可直接推到网页端下载。
-- 本地客户端：若同时运行了本机 joeldeskpro-local-engine.mjs（端口 ${port}），插件会自动优先走本地高速引擎并同步进度到网页端。
+4. 点击左上角「加载已解压的扩展程序」，选择解压出来的文件夹即可成功安装！
+5. 打开 Joel Desk Pro 桌面客户端（默认监听 127.0.0.1:${port}），刷视频或下载大文件时会自动分片提速并保存到 Chrome 默认下载目录（或你在客户端里选择的目录）。
 `;
 
   // IMPORTANT: All extension files sit directly at the ZIP root so Windows "Extract All"
