@@ -4,6 +4,11 @@ export interface WhisperSettings {
   whisper_port: number;
   whisper_auto_start: boolean;
   whisper_close_on_exit: boolean;
+  llm_runtime_mode?: 'mock' | 'custom_endpoint';
+  llm_base_url?: string;
+  llm_model?: string;
+  llm_api_key?: string;
+  llm_system_prompt?: string;
 }
 
 export interface WhisperStatus {
@@ -21,6 +26,9 @@ export interface WhisperStatus {
   computeProvider: string;
   computeGpu: string;
   pendingTasks: number;
+  whisperRemoteProvider?: string;
+  whisperRemoteModel?: string;
+  whisperRemoteLanguage?: string;
   settings?: WhisperSettings;
 }
 
@@ -85,6 +93,9 @@ export const INITIAL_WHISPER_STATUS: WhisperStatus = {
   computeProvider: 'colab',
   computeGpu: '',
   pendingTasks: 0,
+  whisperRemoteProvider: 'colab',
+  whisperRemoteModel: 'large-v3-turbo',
+  whisperRemoteLanguage: 'auto',
 };
 
 export function isDesktopWhisperSupported(): boolean {

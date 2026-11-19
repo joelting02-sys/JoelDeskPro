@@ -87,6 +87,8 @@ export interface AgentMessage {
 export interface EndpointConfig {
   llmBaseUrl: string;
   llmModel: string;
+  llmApiKey: string;
+  llmSystemPrompt: string;
   llmApiKeyConfigured: boolean;
   runtimeMode: 'mock' | 'custom_endpoint';
   whisperProjectDir: string;

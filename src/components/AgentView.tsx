@@ -10,7 +10,9 @@ import {
   FileText,
   Film,
   Link2,
+  Loader2,
   Paperclip,
+  SlidersHorizontal,
   X,
 } from 'lucide-react';
 import {
@@ -19,6 +21,7 @@ import {
   AttachedFileItem,
   ComputeProvider,
   DocumentFormat,
+  EndpointConfig,
   WhisperPresetId,
   WorkspaceView,
 } from '../types/toolkit';
@@ -37,6 +40,8 @@ import { BrandLogo } from './BrandLogo';
 
 interface AgentViewProps {
   lang: AppLanguage;
+  config: EndpointConfig;
+  isSending?: boolean;
   messages: AgentMessage[];
   onSendMessage: (text: string, attachments: AttachedFileItem[]) => void;
   onUpdateAction: (messageId: string, updater: (action: AgentActionPayload) => AgentActionPayload) => void;
@@ -47,6 +52,8 @@ interface AgentViewProps {
 
 export function AgentView({
   lang,
+  config,
+  isSending = false,
   messages,
   onSendMessage,
   onUpdateAction,
@@ -190,7 +197,7 @@ export function AgentView({
                       <span aria-hidden="true">·</span>
                       <span className="font-mono tabular-nums">{msg.timestamp}</span>
                     </div>
-                    <p className="mt-1.5 text-[14px] leading-relaxed text-[#1E293B]">
+                    <p className="mt-1.5 whitespace-pre-wrap text-[14px] leading-relaxed text-[#1E293B]">
                       {msg.content}
                     </p>
 
@@ -211,6 +218,12 @@ export function AgentView({
                 )}
               </div>
             ))}
+            {isSending && (
+              <div className="flex items-center gap-2 text-[13px] text-[#64748B]">
+                <Loader2 className="h-4 w-4 animate-spin text-[#2563EB]" />
+                <span>{t.agent.thinkingCustomLlm(config.llmModel)}</span>
+              </div>
+            )}
             <div ref={bottomRef} />
           </div>
         )}
@@ -320,6 +333,26 @@ export function AgentView({
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-[#2563EB] text-white transition-colors duration-150 hover:bg-[#1D4ED8] disabled:bg-[#CBD5E1] disabled:cursor-not-allowed"
             >
               <ArrowUp className="h-4 w-4" strokeWidth={2.2} />
+            </button>
+          </div>
+
+          <div className="mt-2 flex items-center justify-between text-[11px] text-[#64748B]">
+            <button
+              type="button"
+              onClick={() => onNavigateView('settings')}
+              className="inline-flex items-center gap-1.5 rounded-inner px-2 py-0.5 hover:bg-[#F3F4F6] hover:text-[#0F172A] transition-colors"
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  config.runtimeMode === 'custom_endpoint' ? 'bg-[#2563EB]' : 'bg-[#16A34A]'
+                }`}
+              />
+              <span className="font-mono">
+                {config.runtimeMode === 'custom_endpoint'
+                  ? t.agent.activeCustomModel(config.llmModel || 'Custom LLM')
+                  : t.agent.activeLocalRouter}
+              </span>
+              <SlidersHorizontal className="h-3 w-3 opacity-70" />
             </button>
           </div>
         </form>

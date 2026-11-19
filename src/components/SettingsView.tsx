@@ -1,628 +1,299 @@
 import { useEffect, useState } from 'react';
 import {
-  AudioWaveform,
+  AlertCircle,
   Check,
-  ChevronDown,
-  ChevronUp,
-  Copy,
-  Download,
-  ExternalLink,
-  FolderOpen,
+  Eye,
+  EyeOff,
+  Loader2,
   Plug,
-  RefreshCw,
   Save,
+  Sparkles,
 } from 'lucide-react';
 import { EndpointConfig } from '../types/toolkit';
-import { API_PROTOCOL_SNIPPETS } from '../services/toolkitAdapter';
-import { TdmStatus } from '../services/tdmBridge';
-import { WhisperStatus } from '../services/whisperBridge';
+import { testLlmEndpointConnection } from '../services/toolkitAdapter';
 import { AppLanguage, TRANSLATIONS } from '../i18n';
 
 interface SettingsViewProps {
   lang: AppLanguage;
   config: EndpointConfig;
-  tdmStatus: TdmStatus;
-  whisperStatus: WhisperStatus;
   onSaveConfig: (next: EndpointConfig) => void;
-  onPickWhisperDir: () => void;
-  onOpenWhisperDocked: () => void;
-  onRestartWhisper: () => void;
-  onOpenWhisperStandalone: () => void;
-  onOpenWhisperOutputs: () => void;
-  onPickTdmExe: () => void;
-  onOpenDownloadDocked: () => void;
-  onDetachTdm: () => void;
-  onOpenUpdateModal: () => void;
-  onCopyText: (text: string, label: string) => void;
 }
 
-export function SettingsView({
-  lang,
-  config,
-  tdmStatus,
-  whisperStatus,
-  onSaveConfig,
-  onPickWhisperDir,
-  onOpenWhisperDocked,
-  onRestartWhisper,
-  onOpenWhisperStandalone,
-  onOpenWhisperOutputs,
-  onPickTdmExe,
-  onOpenDownloadDocked,
-  onDetachTdm,
-  onOpenUpdateModal,
-  onCopyText,
-}: SettingsViewProps) {
-  const t = TRANSLATIONS[lang];
+const LLM_PRESETS = [
+  {
+    id: 'ollama',
+    label: 'Ollama (11434)',
+    baseUrl: 'http://127.0.0.1:11434/v1',
+    model: 'qwen2.5:14b',
+  },
+  {
+    id: 'lmstudio',
+    label: 'LM Studio (1234)',
+    baseUrl: 'http://127.0.0.1:1234/v1',
+    model: 'local-model',
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI API',
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4o-mini',
+  },
+  {
+    id: 'deepseek',
+    label: 'DeepSeek API',
+    baseUrl: 'https://api.deepseek.com/v1',
+    model: 'deepseek-chat',
+  },
+] as const;
+
+export function SettingsView({ lang, config, onSaveConfig }: SettingsViewProps) {
+  const t = TRANSLATIONS[lang].settings;
   const [form, setForm] = useState<EndpointConfig>(config);
-  const [testingKey, setTestingKey] = useState<string | null>(null);
-  const [testedOk, setTestedOk] = useState<Record<string, boolean>>({});
-  const [showProtocols, setShowProtocols] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    ok: boolean;
+    latencyMs: number;
+    detail: string;
+  } | null>(null);
 
   useEffect(() => {
     setForm(config);
   }, [config]);
 
-  const handleTest = (key: string) => {
-    setTestingKey(key);
-    setTimeout(() => {
-      setTestingKey(null);
-      setTestedOk((prev) => ({ ...prev, [key]: true }));
-    }, 450);
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    const res = await testLlmEndpointConnection(form);
+    setTesting(false);
+    setTestResult(res);
   };
+
+  const isCustom = form.runtimeMode === 'custom_endpoint';
 
   return (
     <div className="h-full overflow-y-auto bg-[#F8F9FA] px-5 py-6 sm:px-8">
-      <div className="mx-auto max-w-[880px] space-y-5">
-        {/* Local LLM / Agent Endpoint */}
-        <section className="rounded-panel border border-[#E5E7EB] bg-white p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="mx-auto max-w-[780px]">
+        <section className="rounded-panel border border-[#E5E7EB] bg-white p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-[15px] font-semibold text-[#0F172A]">{t.settings.llmTitle}</h2>
-              <p className="mt-0.5 text-[12px] text-[#64748B]">{t.settings.llmDesc}</p>
+              <div className="flex items-center gap-2">
+                <h2 className="text-[16px] font-semibold text-[#0F172A]">{t.llmTitle}</h2>
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-inner px-2 py-0.5 font-mono text-[11px] font-medium ${
+                    isCustom
+                      ? 'bg-[#EFF6FF] text-[#1D4ED8]'
+                      : 'bg-[#F0FDF4] text-[#15803D]'
+                  }`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      isCustom ? 'bg-[#2563EB]' : 'bg-[#16A34A]'
+                    }`}
+                  />
+                  {isCustom ? t.modeCustom : t.modeMock}
+                </span>
+              </div>
+              <p className="mt-1 text-[13px] text-[#64748B]">{t.llmDesc}</p>
             </div>
+
             <div className="inline-flex items-center gap-1 rounded-control bg-[#F3F4F6] p-1">
               <button
                 type="button"
-                onClick={() => setForm((prev) => ({ ...prev, runtimeMode: 'mock' }))}
-                className={`rounded-inner px-2.5 py-1 text-[12px] font-medium transition-colors whitespace-nowrap ${
-                  form.runtimeMode === 'mock'
+                onClick={() => {
+                  setTestResult(null);
+                  setForm((prev) => ({ ...prev, runtimeMode: 'mock' }));
+                }}
+                className={`rounded-inner px-3 py-1.5 text-[12px] font-medium transition-colors whitespace-nowrap ${
+                  !isCustom
                     ? 'bg-white text-[#0F172A] shadow-xs'
                     : 'text-[#64748B] hover:text-[#0F172A]'
                 }`}
               >
-                {t.settings.modeMock}
+                {t.modeMock}
               </button>
               <button
                 type="button"
-                onClick={() => setForm((prev) => ({ ...prev, runtimeMode: 'custom_endpoint' }))}
-                className={`rounded-inner px-2.5 py-1 text-[12px] font-medium transition-colors whitespace-nowrap ${
-                  form.runtimeMode === 'custom_endpoint'
+                onClick={() => {
+                  setTestResult(null);
+                  setForm((prev) => ({ ...prev, runtimeMode: 'custom_endpoint' }));
+                }}
+                className={`rounded-inner px-3 py-1.5 text-[12px] font-medium transition-colors whitespace-nowrap ${
+                  isCustom
                     ? 'bg-white text-[#0F172A] shadow-xs'
                     : 'text-[#64748B] hover:text-[#0F172A]'
                 }`}
               >
-                {t.settings.modeCustom}
+                {t.modeCustom}
               </button>
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                {t.settings.baseUrl}
-              </label>
-              <input
-                type="text"
-                value={form.llmBaseUrl}
-                onChange={(e) => setForm((prev) => ({ ...prev, llmBaseUrl: e.target.value }))}
-                className="h-9 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[13px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                {t.settings.modelId}
-              </label>
-              <input
-                type="text"
-                value={form.llmModel}
-                onChange={(e) => setForm((prev) => ({ ...prev, llmModel: e.target.value }))}
-                className="h-9 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[13px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
-              />
-            </div>
-          </div>
-
-          <div className="mt-3 flex items-center justify-end">
-            <button
-              type="button"
-              onClick={() => handleTest('llm')}
-              className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:bg-[#F8F9FA] hover:text-[#0F172A]"
-            >
-              {testedOk.llm ? (
-                <Check className="h-3.5 w-3.5 text-[#16A34A]" />
-              ) : (
-                <Plug className="h-3.5 w-3.5" />
-              )}
-              {testingKey === 'llm'
-                ? t.settings.testing
-                : testedOk.llm
-                  ? t.settings.testedOk
-                  : t.settings.validateEndpoint}
-            </button>
-          </div>
-        </section>
-
-        {/* Cloud Whisper Studio Embedded Integration */}
-        <section className="rounded-panel border border-[#E5E7EB] bg-white p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-[15px] font-semibold text-[#0F172A]">
-                {t.settings.whisperTitle}
-              </h2>
-              <p className="mt-0.5 text-[12px] text-[#64748B]">{t.settings.whisperDesc}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-inner px-2.5 py-1 font-mono text-[11px] font-medium ${
-                  !whisperStatus.supported
-                    ? 'bg-[#F3F4F6] text-[#64748B]'
-                    : whisperStatus.running
-                      ? whisperStatus.computeStatus === 'online'
-                        ? 'bg-[#F0FDF4] text-[#15803D]'
-                        : 'bg-[#EFF6FF] text-[#1D4ED8]'
-                      : whisperStatus.starting
-                        ? 'bg-[#FFFBEB] text-[#B45309]'
-                        : whisperStatus.projectExists
-                          ? 'bg-[#EFF6FF] text-[#1D4ED8]'
-                          : 'bg-[#FEF2F2] text-[#B91C1C]'
-                }`}
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    !whisperStatus.supported
-                      ? 'bg-[#94A3B8]'
-                      : whisperStatus.running
-                        ? whisperStatus.computeStatus === 'online'
-                          ? 'bg-[#16A34A]'
-                          : 'bg-[#2563EB]'
-                        : whisperStatus.starting
-                          ? 'bg-[#D97706]'
-                          : whisperStatus.projectExists
-                            ? 'bg-[#2563EB]'
-                            : 'bg-[#DC2626]'
-                  }`}
-                />
-                {!whisperStatus.supported
-                  ? t.settings.whisperStatusWeb
-                  : whisperStatus.running
-                    ? whisperStatus.computeStatus === 'online'
-                      ? t.settings.whisperStatusGpuOnline(whisperStatus.computeGpu || 'GPU')
-                      : t.settings.whisperStatusRunning
-                    : whisperStatus.starting
-                      ? t.settings.whisperStatusStarting
-                      : whisperStatus.projectExists
-                        ? t.settings.whisperStatusReady
-                        : t.settings.whisperStatusMissing}
-              </span>
-            </div>
-          </div>
-
-          <div className="mt-4 space-y-4">
-            <div>
-              <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                {t.settings.whisperProjectDir}
-              </label>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="text"
-                  value={form.whisperProjectDir}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, whisperProjectDir: e.target.value }))
-                  }
-                  placeholder={t.settings.whisperDirPlaceholder}
-                  className="h-9 min-w-[260px] flex-1 rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[12px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
-                />
-                <button
-                  type="button"
-                  disabled={!whisperStatus.supported}
-                  onClick={onPickWhisperDir}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 text-[12px] font-medium text-[#0F172A] hover:border-[#2563EB] hover:text-[#2563EB] disabled:opacity-50 whitespace-nowrap"
-                >
-                  <FolderOpen className="h-3.5 w-3.5" />
-                  {t.settings.whisperPickDirBtn}
-                </button>
+          {!isCustom && (
+            <div className="mt-5 rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-4 py-3 text-[13px] leading-relaxed text-[#475569]">
+              <div className="flex items-center gap-2 font-medium text-[#0F172A]">
+                <Sparkles className="h-4 w-4 text-[#2563EB]" />
+                <span>{t.localRouterNoticeTitle}</span>
               </div>
+              <p className="mt-1">{t.localRouterNoticeDesc}</p>
             </div>
+          )}
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {isCustom && (
+            <div className="mt-5 space-y-4">
+              {/* Quick Endpoint Presets */}
+              <div>
+                <div className="mb-1.5 text-[12px] font-medium text-[#475569]">
+                  {t.quickPresetsLabel}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {LLM_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => {
+                        setTestResult(null);
+                        setForm((prev) => ({
+                          ...prev,
+                          llmBaseUrl: preset.baseUrl,
+                          llmModel: preset.model,
+                        }));
+                      }}
+                      className="rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 py-1.5 font-mono text-[12px] text-[#334155] transition-colors hover:border-[#2563EB] hover:bg-white hover:text-[#2563EB]"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
+                    {t.baseUrl}
+                  </label>
+                  <input
+                    type="text"
+                    value={form.llmBaseUrl}
+                    onChange={(e) => {
+                      setTestResult(null);
+                      setForm((prev) => ({ ...prev, llmBaseUrl: e.target.value }));
+                    }}
+                    placeholder="http://127.0.0.1:11434/v1"
+                    className="h-9 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[13px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
+                    {t.modelId}
+                  </label>
+                  <input
+                    type="text"
+                    value={form.llmModel}
+                    onChange={(e) => {
+                      setTestResult(null);
+                      setForm((prev) => ({ ...prev, llmModel: e.target.value }));
+                    }}
+                    placeholder="qwen2.5:14b"
+                    className="h-9 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[13px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                  {t.settings.whisperPort}
+                  {t.apiKeyLabel}
                 </label>
-                <input
-                  type="number"
-                  min={1024}
-                  max={65535}
-                  value={form.whisperPort}
-                  onChange={(e) => {
-                    const port = Number(e.target.value);
-                    if (Number.isFinite(port)) {
-                      setForm((prev) => ({ ...prev, whisperPort: port }));
-                    }
-                  }}
-                  className="h-9 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[13px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none tabular-nums"
-                />
-              </div>
-
-              <div className="rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3.5 py-2.5 text-[12px] leading-relaxed text-[#475569]">
-                <span className="font-medium text-[#0F172A]">
-                  {t.settings.whisperBuiltInSettingsTitle}
-                </span>
-                <p className="mt-0.5">{t.settings.whisperBuiltInSettingsDesc}</p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-1 text-[13px] text-[#0F172A]">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={form.whisperAutoStart}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, whisperAutoStart: e.target.checked }))
-                  }
-                  className="h-4 w-4 rounded-inner border-[#CBD5E1] accent-[#2563EB]"
-                />
-                <span>{t.settings.whisperAutoStart}</span>
-              </label>
-
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={form.whisperCloseOnExit}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, whisperCloseOnExit: e.target.checked }))
-                  }
-                  className="h-4 w-4 rounded-inner border-[#CBD5E1] accent-[#2563EB]"
-                />
-                <span>{t.settings.whisperCloseOnExit}</span>
-              </label>
-            </div>
-
-            {whisperStatus.supported && (
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={onOpenWhisperDocked}
-                  className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#0F172A] hover:border-[#2563EB] hover:text-[#2563EB] whitespace-nowrap"
-                >
-                  <AudioWaveform className="h-3.5 w-3.5" />
-                  {t.settings.whisperOpenDockedBtn}
-                </button>
-                <button
-                  type="button"
-                  onClick={onRestartWhisper}
-                  className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:text-[#0F172A] whitespace-nowrap"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  {t.settings.whisperRestartBtn}
-                </button>
-                <button
-                  type="button"
-                  onClick={onOpenWhisperOutputs}
-                  className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:text-[#0F172A] whitespace-nowrap"
-                >
-                  <FolderOpen className="h-3.5 w-3.5" />
-                  {t.settings.whisperOutputsBtn}
-                </button>
-                <button
-                  type="button"
-                  onClick={onOpenWhisperStandalone}
-                  className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:text-[#0F172A] whitespace-nowrap"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  {t.settings.whisperStandaloneBtn}
-                </button>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* Native TDM Fast Integration */}
-        <section className="rounded-panel border border-[#E5E7EB] bg-white p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-[15px] font-semibold text-[#0F172A]">{t.settings.tdmTitle}</h2>
-              <p className="mt-0.5 text-[12px] text-[#64748B]">{t.settings.tdmDesc}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-inner px-2.5 py-1 font-mono text-[11px] font-medium ${
-                  !tdmStatus.supported
-                    ? 'bg-[#F3F4F6] text-[#64748B]'
-                    : tdmStatus.running
-                      ? 'bg-[#F0FDF4] text-[#15803D]'
-                      : tdmStatus.exeExists
-                        ? 'bg-[#EFF6FF] text-[#1D4ED8]'
-                        : 'bg-[#FEF2F2] text-[#B91C1C]'
-                }`}
-              >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    !tdmStatus.supported
-                      ? 'bg-[#94A3B8]'
-                      : tdmStatus.running
-                        ? 'bg-[#16A34A]'
-                        : tdmStatus.exeExists
-                          ? 'bg-[#2563EB]'
-                          : 'bg-[#DC2626]'
-                  }`}
-                />
-                {!tdmStatus.supported
-                  ? t.settings.tdmStatusWeb
-                  : tdmStatus.running
-                    ? tdmStatus.detached
-                      ? t.settings.tdmStatusDetached
-                      : t.settings.tdmStatusRunning
-                    : tdmStatus.exeExists
-                      ? t.settings.tdmStatusReady
-                      : t.settings.tdmStatusMissing}
-              </span>
-            </div>
-          </div>
-
-          <div className="mt-4 space-y-4">
-            <div>
-              <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                {t.settings.tdmExePath}
-              </label>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="text"
-                  value={form.tdmExePath}
-                  onChange={(e) => setForm((prev) => ({ ...prev, tdmExePath: e.target.value }))}
-                  placeholder={t.settings.tdmExePlaceholder}
-                  className="h-9 min-w-[260px] flex-1 rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[12px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
-                />
-                <button
-                  type="button"
-                  disabled={!tdmStatus.supported}
-                  onClick={onPickTdmExe}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 text-[12px] font-medium text-[#0F172A] hover:border-[#2563EB] hover:text-[#2563EB] disabled:opacity-50 whitespace-nowrap"
-                >
-                  <FolderOpen className="h-3.5 w-3.5" />
-                  {t.settings.tdmPickExeBtn}
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                  {t.settings.tdmCapturePort}
-                </label>
-                <input
-                  type="number"
-                  min={1024}
-                  max={65535}
-                  value={form.tdmCapturePort}
-                  onChange={(e) => {
-                    const port = Number(e.target.value);
-                    if (Number.isFinite(port)) {
-                      setForm((prev) => ({ ...prev, tdmCapturePort: port }));
-                    }
-                  }}
-                  className="h-9 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[13px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none tabular-nums"
-                />
-              </div>
-
-              <div className="rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3.5 py-2.5 text-[12px] leading-relaxed text-[#475569]">
-                <span className="font-medium text-[#0F172A]">{t.settings.tdmExtensionTitle}</span>
-                <p className="mt-0.5">{t.settings.tdmExtensionDesc(form.tdmCapturePort)}</p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-1 text-[13px] text-[#0F172A]">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={form.tdmAutoLaunch}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, tdmAutoLaunch: e.target.checked }))
-                  }
-                  className="h-4 w-4 rounded-inner border-[#CBD5E1] accent-[#2563EB]"
-                />
-                <span>{t.settings.tdmAutoLaunch}</span>
-              </label>
-
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={form.tdmCloseOnExit}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, tdmCloseOnExit: e.target.checked }))
-                  }
-                  className="h-4 w-4 rounded-inner border-[#CBD5E1] accent-[#2563EB]"
-                />
-                <span>{t.settings.tdmCloseOnExit}</span>
-              </label>
-
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={form.tdmHideOnDrag}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, tdmHideOnDrag: e.target.checked }))
-                  }
-                  className="h-4 w-4 rounded-inner border-[#CBD5E1] accent-[#2563EB]"
-                />
-                <span>{t.settings.tdmHideOnDrag}</span>
-              </label>
-            </div>
-
-            {tdmStatus.supported && (
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={onOpenDownloadDocked}
-                  className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#0F172A] hover:border-[#2563EB] hover:text-[#2563EB] whitespace-nowrap"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  {t.settings.tdmOpenDockedBtn}
-                </button>
-                {tdmStatus.attached && (
+                <div className="relative">
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    value={form.llmApiKey}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setTestResult(null);
+                      setForm((prev) => ({
+                        ...prev,
+                        llmApiKey: val,
+                        llmApiKeyConfigured: Boolean(val.trim()),
+                      }));
+                    }}
+                    placeholder={t.apiKeyPlaceholder}
+                    className="h-9 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] pl-3 pr-9 font-mono text-[13px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
+                  />
                   <button
                     type="button"
-                    onClick={onDetachTdm}
-                    className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:text-[#0F172A] whitespace-nowrap"
+                    onClick={() => setShowKey((v) => !v)}
+                    aria-label={showKey ? t.hideKey : t.showKey}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#64748B] hover:text-[#0F172A]"
                   >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    {t.settings.tdmDetachBtn}
+                    {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
-                )}
+                </div>
               </div>
-            )}
-          </div>
-        </section>
-
-        {/* Document & Media Converter API */}
-        <section className="rounded-panel border border-[#E5E7EB] bg-white p-5">
-          <h2 className="text-[15px] font-semibold text-[#0F172A]">{t.settings.converterTitle}</h2>
-          <p className="mt-0.5 text-[12px] text-[#64748B]">{t.settings.converterDesc}</p>
+            </div>
+          )}
 
           <div className="mt-4">
             <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-              {t.settings.converterUrl}
+              {t.systemPromptLabel}
             </label>
-            <input
-              type="text"
-              value={form.converterApiUrl}
-              onChange={(e) => setForm((prev) => ({ ...prev, converterApiUrl: e.target.value }))}
-              className="h-9 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[13px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
+            <textarea
+              rows={3}
+              value={form.llmSystemPrompt}
+              onChange={(e) => setForm((prev) => ({ ...prev, llmSystemPrompt: e.target.value }))}
+              placeholder={t.systemPromptPlaceholder}
+              className="w-full resize-y rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 py-2 text-[13px] leading-relaxed text-[#0F172A] placeholder:text-[#94A3B8] focus:border-[#2563EB] focus:bg-white focus:outline-none"
             />
           </div>
-        </section>
 
-        {/* GitHub Update Source */}
-        <section className="rounded-panel border border-[#E5E7EB] bg-white p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-[15px] font-semibold text-[#0F172A]">{t.settings.githubTitle}</h2>
-              <p className="mt-0.5 text-[12px] text-[#64748B]">{t.settings.githubDesc}</p>
-            </div>
-            <button
-              type="button"
-              onClick={onOpenUpdateModal}
-              className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#0F172A] hover:border-[#2563EB] hover:text-[#2563EB] whitespace-nowrap"
+          {testResult && (
+            <div
+              className={`mt-4 flex items-center gap-2 rounded-control border px-3.5 py-2.5 font-mono text-[12px] ${
+                testResult.ok
+                  ? 'border-[#BBF7D0] bg-[#F0FDF4] text-[#15803D]'
+                  : 'border-[#FECACA] bg-[#FEF2F2] text-[#B91C1C]'
+              }`}
             >
-              <RefreshCw className="h-3.5 w-3.5" />
-              {t.settings.openUpdateBtn}
-            </button>
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                {t.settings.githubRepo}
-              </label>
-              <input
-                type="text"
-                value={form.githubRepo}
-                onChange={(e) => setForm((prev) => ({ ...prev, githubRepo: e.target.value }))}
-                placeholder="joelting02-sys/JoelDeskPro"
-                className="h-9 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[13px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                {t.settings.githubBranch}
-              </label>
-              <input
-                type="text"
-                value={form.githubBranch}
-                onChange={(e) => setForm((prev) => ({ ...prev, githubBranch: e.target.value }))}
-                placeholder="main"
-                className="h-9 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[13px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
-              />
-            </div>
-            <label className="flex items-center gap-2.5 pt-1 text-[13px] text-[#0F172A] sm:col-span-2">
-              <input
-                type="checkbox"
-                checked={form.autoCheckUpdate}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, autoCheckUpdate: e.target.checked }))
-                }
-                className="h-4 w-4 rounded-inner border-[#CBD5E1] accent-[#2563EB]"
-              />
-              <span>{t.settings.autoCheckStartup}</span>
-            </label>
-          </div>
-        </section>
-
-        {/* Collapsible Adapter Protocol Reference */}
-        <section className="overflow-hidden rounded-panel border border-[#E5E7EB] bg-white">
-          <button
-            type="button"
-            onClick={() => setShowProtocols((prev) => !prev)}
-            className="flex w-full items-center justify-between px-5 py-3.5 text-left"
-          >
-            <div>
-              <div className="text-[14px] font-semibold text-[#0F172A]">
-                {t.settings.protocolTitle}
-              </div>
-              <div className="text-[12px] text-[#64748B]">{t.settings.protocolDesc}</div>
-            </div>
-            {showProtocols ? (
-              <ChevronUp className="h-4 w-4 text-[#64748B]" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-[#64748B]" />
-            )}
-          </button>
-
-          {showProtocols && (
-            <div className="grid grid-cols-1 gap-4 border-t border-[#E5E7EB] p-5 md:grid-cols-2">
-              {(
-                [
-                  { key: 'llm', title: t.settings.protocols.llm },
-                  { key: 'transcribe', title: t.settings.protocols.transcribe },
-                  { key: 'tdmCapture', title: t.settings.protocols.tdmCapture },
-                  { key: 'convert', title: t.settings.protocols.convert },
-                ] as const
-              ).map((item) => (
-                <div
-                  key={item.key}
-                  className="rounded-control border border-[#E5E7EB] bg-[#F8F9FA] p-3.5"
-                >
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-[12px] font-semibold text-[#0F172A]">{item.title}</span>
-                    <button
-                      type="button"
-                      onClick={() => onCopyText(API_PROTOCOL_SNIPPETS[item.key], item.title)}
-                      className="inline-flex items-center gap-1 text-[11px] text-[#2563EB] hover:text-[#1D4ED8]"
-                    >
-                      <Copy className="h-3 w-3" />
-                      {t.settings.copy}
-                    </button>
-                  </div>
-                  <pre className="overflow-x-auto font-mono text-[11px] leading-relaxed text-[#334155]">
-                    {API_PROTOCOL_SNIPPETS[item.key]}
-                  </pre>
-                </div>
-              ))}
+              {testResult.ok ? (
+                <Check className="h-4 w-4 shrink-0" />
+              ) : (
+                <AlertCircle className="h-4 w-4 shrink-0" />
+              )}
+              <span>
+                {testResult.ok
+                  ? t.testedOk(testResult.latencyMs, testResult.detail)
+                  : t.testFailed(testResult.detail)}
+              </span>
             </div>
           )}
-        </section>
 
-        {/* Save Bar */}
-        <div className="flex items-center justify-end pt-1">
-          <button
-            type="button"
-            onClick={() => onSaveConfig(form)}
-            className="inline-flex items-center gap-2 rounded-control bg-[#2563EB] px-4 py-2 text-[13px] font-medium text-white hover:bg-[#1D4ED8] transition-colors whitespace-nowrap"
-          >
-            <Save className="h-4 w-4" />
-            {t.settings.saveConfig}
-          </button>
-        </div>
+          <div className="mt-5 flex flex-wrap items-center justify-end gap-2.5 border-t border-[#E5E7EB] pt-4">
+            {isCustom && (
+              <button
+                type="button"
+                disabled={testing}
+                onClick={handleTest}
+                className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3.5 py-2 text-[13px] font-medium text-[#475569] hover:border-[#2563EB] hover:text-[#2563EB] disabled:opacity-50 whitespace-nowrap"
+              >
+                {testing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plug className="h-4 w-4" />
+                )}
+                {testing ? t.testing : t.validateEndpoint}
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => onSaveConfig(form)}
+              className="inline-flex items-center gap-2 rounded-control bg-[#2563EB] px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-[#1D4ED8] whitespace-nowrap"
+            >
+              <Save className="h-4 w-4" />
+              {t.saveConfig}
+            </button>
+          </div>
+        </section>
       </div>
     </div>
   );

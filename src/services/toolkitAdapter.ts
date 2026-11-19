@@ -5,6 +5,7 @@ import {
   DocumentFormat,
   EndpointConfig,
   MediaKind,
+  TranscriptLanguage,
   WhisperPresetId,
 } from '../types/toolkit';
 import { AppLanguage } from '../i18n';
@@ -132,6 +133,8 @@ export function getComputeProviders(lang: AppLanguage) {
 export const DEFAULT_ENDPOINT_CONFIG: EndpointConfig = {
   llmBaseUrl: 'http://127.0.0.1:11434/v1',
   llmModel: 'qwen2.5:14b',
+  llmApiKey: '',
+  llmSystemPrompt: '',
   llmApiKeyConfigured: false,
   runtimeMode: 'mock',
   whisperProjectDir: '',
@@ -150,6 +153,193 @@ export const DEFAULT_ENDPOINT_CONFIG: EndpointConfig = {
   githubBranch: 'main',
   autoCheckUpdate: false,
 };
+
+const AI_CONFIG_STORAGE_KEY = 'joeldeskpro_ai_config';
+
+export function loadSavedLlmConfig(): Partial<EndpointConfig> {
+  try {
+    const raw = window.localStorage.getItem(AI_CONFIG_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const out: Partial<EndpointConfig> = {};
+    if (parsed.runtimeMode === 'mock' || parsed.runtimeMode === 'custom_endpoint') {
+      out.runtimeMode = parsed.runtimeMode;
+    }
+    if (typeof parsed.llmBaseUrl === 'string' && parsed.llmBaseUrl.trim()) {
+      out.llmBaseUrl = parsed.llmBaseUrl.trim();
+    }
+    if (typeof parsed.llmModel === 'string' && parsed.llmModel.trim()) {
+      out.llmModel = parsed.llmModel.trim();
+    }
+    if (typeof parsed.llmApiKey === 'string') {
+      out.llmApiKey = parsed.llmApiKey;
+      out.llmApiKeyConfigured = Boolean(parsed.llmApiKey.trim());
+    }
+    if (typeof parsed.llmSystemPrompt === 'string') {
+      out.llmSystemPrompt = parsed.llmSystemPrompt;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function saveLlmConfigToStorage(config: EndpointConfig): void {
+  try {
+    window.localStorage.setItem(
+      AI_CONFIG_STORAGE_KEY,
+      JSON.stringify({
+        runtimeMode: config.runtimeMode,
+        llmBaseUrl: config.llmBaseUrl.trim(),
+        llmModel: config.llmModel.trim(),
+        llmApiKey: config.llmApiKey,
+        llmSystemPrompt: config.llmSystemPrompt,
+      })
+    );
+  } catch {}
+}
+
+export async function testLlmEndpointConnection(
+  config: EndpointConfig
+): Promise<{ ok: boolean; latencyMs: number; detail: string }> {
+  const baseUrl = config.llmBaseUrl.trim().replace(/\/+$/, '');
+  if (!baseUrl) {
+    return { ok: false, latencyMs: 0, detail: 'Missing Base URL' };
+  }
+  try {
+    new URL(baseUrl);
+  } catch {
+    return { ok: false, latencyMs: 0, detail: 'Invalid URL format' };
+  }
+
+  const headers: Record<string, string> = {};
+  if (config.llmApiKey.trim()) {
+    headers.Authorization = `Bearer ${config.llmApiKey.trim()}`;
+  }
+
+  const startedAt = performance.now();
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 7000);
+  try {
+    const modelsRes = await fetch(`${baseUrl}/models`, {
+      method: 'GET',
+      headers,
+      signal: controller.signal,
+    });
+    const latencyMs = Math.max(1, Math.round(performance.now() - startedAt));
+    if (modelsRes.ok) {
+      let modelHint = '';
+      try {
+        const json = (await modelsRes.json()) as { data?: Array<{ id?: string }> };
+        if (Array.isArray(json.data) && json.data.length > 0) {
+          modelHint = ` (${json.data.length} models)`;
+        }
+      } catch {}
+      return { ok: true, latencyMs, detail: `HTTP ${modelsRes.status}${modelHint}` };
+    }
+
+    // Fallback to a lightweight /chat/completions ping for servers without GET /models
+    if (modelsRes.status === 404 || modelsRes.status === 405 || modelsRes.status === 501) {
+      const chatRes = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: config.llmModel.trim() || 'gpt-4o-mini',
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 4,
+          stream: false,
+        }),
+        signal: controller.signal,
+      });
+      const chatLatency = Math.max(1, Math.round(performance.now() - startedAt));
+      if (chatRes.ok) {
+        return { ok: true, latencyMs: chatLatency, detail: `HTTP ${chatRes.status}` };
+      }
+      return { ok: false, latencyMs: chatLatency, detail: `HTTP ${chatRes.status}` };
+    }
+
+    return { ok: false, latencyMs, detail: `HTTP ${modelsRes.status}` };
+  } catch (err) {
+    const latencyMs = Math.max(1, Math.round(performance.now() - startedAt));
+    return {
+      ok: false,
+      latencyMs,
+      detail: err instanceof Error ? err.message : 'Network error',
+    };
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+export async function callCustomLlmEndpoint(
+  config: EndpointConfig,
+  text: string,
+  attachments: AttachedFileItem[],
+  lang: AppLanguage = 'en'
+): Promise<{ ok: boolean; content?: string; error?: string }> {
+  const baseUrl = config.llmBaseUrl.trim().replace(/\/+$/, '');
+  if (!baseUrl) {
+    return { ok: false, error: 'Missing Base URL' };
+  }
+
+  const systemPrompt =
+    config.llmSystemPrompt.trim() ||
+    (lang === 'zh'
+      ? '你是 Joel Desk Pro 桌面工具箱里的极简 AI 助手。工具箱支持：TDM Fast 高速下载、Cloud Whisper Studio 云端转录、文档格式转换。请用简洁中文直接回答用户。'
+      : 'You are the minimalist AI Assistant inside Joel Desk Pro desktop workbench (supporting TDM Fast download dispatch, Cloud Whisper Studio transcription, and format conversion). Reply concisely.');
+
+  const attachDesc =
+    attachments.length > 0
+      ? attachments.map((a) => `[Attachment: ${a.name} (${a.category})]`).join('\n') + '\n'
+      : '';
+  const userContent = `${attachDesc}${text || ''}`.trim() || 'Hello';
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (config.llmApiKey.trim()) {
+    headers.Authorization = `Bearer ${config.llmApiKey.trim()}`;
+  }
+
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 18000);
+  try {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: config.llmModel.trim() || 'qwen2.5:14b',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ],
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const bodyText = await res.text();
+        if (bodyText) detail = `${detail}: ${bodyText.slice(0, 140)}`;
+      } catch {}
+      return { ok: false, error: detail };
+    }
+    const json = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const replyText = json?.choices?.[0]?.message?.content?.trim();
+    if (!replyText) {
+      return { ok: false, error: 'Empty response from model endpoint' };
+    }
+    return { ok: true, content: replyText };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Request failed',
+    };
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 
 const VIDEO_EXTS = new Set(['mp4', 'mkv', 'mov', 'avi', 'webm', 'flv', 'm4v', 'ts']);
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'm4a', 'flac', 'ogg', 'aac', 'opus', 'wma']);
@@ -386,13 +576,14 @@ function inferRequestedTargetFormat(text: string, sourceFormat: DocumentFormat):
   return getRecommendedTargetFormat(sourceFormat);
 }
 
-function inferProvider(text: string): ComputeProvider {
+function inferProvider(text: string, fallback: ComputeProvider = 'colab-t4'): ComputeProvider {
   const lower = text.toLowerCase();
   if (lower.includes('kaggle')) return 'kaggle-t4';
-  return 'colab-t4';
+  if (lower.includes('colab')) return 'colab-t4';
+  return fallback;
 }
 
-function inferWhisperPreset(text: string): WhisperPresetId {
+function inferWhisperPreset(text: string, fallback: WhisperPresetId = 'balanced'): WhisperPresetId {
   const lower = text.toLowerCase();
   if (lower.includes('精准') || lower.includes('large') || lower.includes('高精度') || lower.includes('准确')) {
     return 'accurate';
@@ -400,14 +591,19 @@ function inferWhisperPreset(text: string): WhisperPresetId {
   if (lower.includes('快速') || lower.includes('small') || lower.includes('快点') || lower.includes('极速')) {
     return 'fast';
   }
-  return 'balanced';
+  return fallback;
 }
 
 export function parseAgentIntent(
   text: string,
   attachments: AttachedFileItem[],
   _config: EndpointConfig,
-  lang: AppLanguage = 'en'
+  lang: AppLanguage = 'en',
+  whisperDefaults?: {
+    provider?: ComputeProvider;
+    preset?: WhisperPresetId;
+    language?: TranscriptLanguage;
+  }
 ): { reply: string; action?: AgentActionPayload } {
   const isZh = lang === 'zh';
   const trimmed = text.trim();
@@ -434,19 +630,19 @@ export function parseAgentIntent(
     };
   }
 
-  // 2. Attached audio/video -> Cloud T4 Transcription
+  // 2. Attached audio/video -> Cloud Whisper Studio Transcription
   const mediaAttachment = attachments.find((f) => f.category === 'video' || f.category === 'audio');
   if (mediaAttachment) {
     const isVideo = mediaAttachment.category === 'video';
-    const provider = inferProvider(trimmed);
-    const preset = inferWhisperPreset(trimmed);
+    const provider = inferProvider(trimmed, whisperDefaults?.provider || 'colab-t4');
+    const preset = inferWhisperPreset(trimmed, whisperDefaults?.preset || 'balanced');
     const reply = isZh
       ? isVideo
-        ? '已识别为视频文件，转录前将自动抽离 16kHz 音轨并调度云端 T4 运行 faster-whisper。可在下方确认模型与算力节点。'
-        : '已识别为音频文件，可直接发送至云端 T4 运行 faster-whisper 转录。'
+        ? '已识别为视频文件，将发送至 Cloud Whisper Studio 自动抽离 16kHz 音轨并调度云端 GPU 转录。可在下方确认节点与模型。'
+        : '已识别为音频文件，可直接发送至 Cloud Whisper Studio 进行云端 GPU 转录。'
       : isVideo
-        ? 'Video file detected. A 16kHz audio track will be extracted automatically before dispatching to cloud T4 faster-whisper.'
-        : 'Audio file detected. Ready to dispatch directly to cloud T4 faster-whisper.';
+        ? 'Video file detected. Will send to Cloud Whisper Studio to extract a slim 16kHz audio track and run cloud GPU transcription.'
+        : 'Audio file detected. Ready to send directly to Cloud Whisper Studio for cloud GPU transcription.';
 
     const wantsMdPlain =
       trimmed.toLowerCase().includes('md') ||
@@ -463,7 +659,7 @@ export function parseAgentIntent(
         provider,
         preset,
         outputFormat: wantsMdPlain ? 'md_plain' : trimmed.toLowerCase().includes('txt') ? 'txt' : 'srt',
-        language: 'auto',
+        language: whisperDefaults?.language || 'auto',
         rawFile: mediaAttachment.rawFile,
       },
     };

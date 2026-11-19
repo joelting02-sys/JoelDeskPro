@@ -207,6 +207,11 @@ function createWhisperManager(options = {}) {
     whisper_port: 8788,
     whisper_auto_start: true,
     whisper_close_on_exit: true,
+    llm_runtime_mode: 'mock',
+    llm_base_url: 'http://127.0.0.1:11434/v1',
+    llm_model: 'qwen2.5:14b',
+    llm_api_key: '',
+    llm_system_prompt: '',
   };
 
   let childProc = null;
@@ -231,6 +236,9 @@ function createWhisperManager(options = {}) {
     computeProvider: 'colab',
     computeGpu: '',
     pendingTasks: 0,
+    whisperRemoteProvider: 'colab',
+    whisperRemoteModel: 'large-v3-turbo',
+    whisperRemoteLanguage: 'auto',
   };
 
   function syncFlags() {
@@ -287,6 +295,21 @@ function createWhisperManager(options = {}) {
         if (typeof parsed.whisper_close_on_exit === 'boolean') {
           settings.whisper_close_on_exit = parsed.whisper_close_on_exit;
         }
+        if (parsed.llm_runtime_mode === 'mock' || parsed.llm_runtime_mode === 'custom_endpoint') {
+          settings.llm_runtime_mode = parsed.llm_runtime_mode;
+        }
+        if (typeof parsed.llm_base_url === 'string') {
+          settings.llm_base_url = parsed.llm_base_url.trim();
+        }
+        if (typeof parsed.llm_model === 'string') {
+          settings.llm_model = parsed.llm_model.trim();
+        }
+        if (typeof parsed.llm_api_key === 'string') {
+          settings.llm_api_key = parsed.llm_api_key.trim();
+        }
+        if (typeof parsed.llm_system_prompt === 'string') {
+          settings.llm_system_prompt = parsed.llm_system_prompt;
+        }
       }
     } catch {}
     syncFlags();
@@ -311,13 +334,18 @@ function createWhisperManager(options = {}) {
 
   function applyRemoteStateSnapshot(snap) {
     if (!snap || !snap.compute) return false;
-    const prevKey = `${state.running}|${state.computeStatus}|${state.computeProvider}|${state.computeGpu}|${state.pendingTasks}`;
+    const prevKey = `${state.running}|${state.computeStatus}|${state.computeProvider}|${state.computeGpu}|${state.pendingTasks}|${state.whisperRemoteProvider}|${state.whisperRemoteModel}|${state.whisperRemoteLanguage}`;
     state.running = true;
     state.computeStatus = String(snap.compute.status || 'offline');
     state.computeProvider = String(snap.compute.provider || 'colab');
     state.computeGpu = String(snap.compute.gpu || '');
     state.pendingTasks = Number(snap.compute.pending_tasks_count || 0);
-    const nextKey = `${state.running}|${state.computeStatus}|${state.computeProvider}|${state.computeGpu}|${state.pendingTasks}`;
+    if (snap.settings) {
+      state.whisperRemoteProvider = String(snap.settings.provider || 'colab');
+      state.whisperRemoteModel = String(snap.settings.whisper_model || 'large-v3-turbo');
+      state.whisperRemoteLanguage = String(snap.settings.language || 'auto');
+    }
+    const nextKey = `${state.running}|${state.computeStatus}|${state.computeProvider}|${state.computeGpu}|${state.pendingTasks}|${state.whisperRemoteProvider}|${state.whisperRemoteModel}|${state.whisperRemoteLanguage}`;
     return prevKey !== nextKey;
   }
 
@@ -632,6 +660,26 @@ function createWhisperManager(options = {}) {
     if (typeof patch.whisper_close_on_exit === 'boolean') {
       settings.whisper_close_on_exit = patch.whisper_close_on_exit;
       diskPatch.whisper_close_on_exit = settings.whisper_close_on_exit;
+    }
+    if (patch.llm_runtime_mode === 'mock' || patch.llm_runtime_mode === 'custom_endpoint') {
+      settings.llm_runtime_mode = patch.llm_runtime_mode;
+      diskPatch.llm_runtime_mode = settings.llm_runtime_mode;
+    }
+    if (typeof patch.llm_base_url === 'string') {
+      settings.llm_base_url = patch.llm_base_url.trim();
+      diskPatch.llm_base_url = settings.llm_base_url;
+    }
+    if (typeof patch.llm_model === 'string') {
+      settings.llm_model = patch.llm_model.trim();
+      diskPatch.llm_model = settings.llm_model;
+    }
+    if (typeof patch.llm_api_key === 'string') {
+      settings.llm_api_key = patch.llm_api_key.trim();
+      diskPatch.llm_api_key = settings.llm_api_key;
+    }
+    if (typeof patch.llm_system_prompt === 'string') {
+      settings.llm_system_prompt = patch.llm_system_prompt;
+      diskPatch.llm_system_prompt = settings.llm_system_prompt;
     }
 
     syncFlags();

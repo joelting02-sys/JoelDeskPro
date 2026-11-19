@@ -11,17 +11,23 @@ import {
   AgentActionPayload,
   AgentMessage,
   AttachedFileItem,
+  ComputeProvider,
   ConversionTask,
   DocumentFormat,
   EndpointConfig,
   ToastNotice,
+  TranscriptLanguage,
+  WhisperPresetId,
   WorkspaceView,
 } from './types/toolkit';
 import {
   DEFAULT_ENDPOINT_CONFIG,
+  callCustomLlmEndpoint,
   detectDocumentFormat,
+  loadSavedLlmConfig,
   nowTimeLabel,
   parseAgentIntent,
+  saveLlmConfigToStorage,
 } from './services/toolkitAdapter';
 import {
   INITIAL_TDM_STATUS,
@@ -50,8 +56,12 @@ export default function App() {
   const [activeView, setActiveView] = useState<WorkspaceView>('agent');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  const [config, setConfig] = useState<EndpointConfig>(DEFAULT_ENDPOINT_CONFIG);
+  const [config, setConfig] = useState<EndpointConfig>(() => ({
+    ...DEFAULT_ENDPOINT_CONFIG,
+    ...loadSavedLlmConfig(),
+  }));
   const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [agentSending, setAgentSending] = useState(false);
   const [conversions, setConversions] = useState<ConversionTask[]>([]);
   const [localEngineOnline, setLocalEngineOnline] = useState(false);
   const [localEnginePackaged, setLocalEnginePackaged] = useState(false);
@@ -82,6 +92,7 @@ export default function App() {
   activeViewRef.current = activeView;
   const lastDownloadBoundsRef = useRef<TdmBounds | undefined>(undefined);
   const whisperIframeRef = useRef<HTMLIFrameElement>(null);
+  const diskLlmSyncedRef = useRef(false);
 
   const t = TRANSLATIONS[lang];
 
@@ -162,33 +173,56 @@ export default function App() {
     };
   }, [showToast]);
 
-  // Sync Cloud Whisper Studio backend status & events
+  // Sync Cloud Whisper Studio backend status & persisted Home AI settings
   useEffect(() => {
     const whisperApi = window.joelDesktop?.whisper;
     if (!whisperApi || !isDesktopWhisperSupported()) return;
 
     let mounted = true;
-    const applyWhisperStatus = (st: WhisperStatus) => {
+    const applyWhisperStatus = (st: WhisperStatus, isInitialLoad = false) => {
       setWhisperStatus(st);
       if (st.settings) {
-        setConfig((prev) => ({
-          ...prev,
-          whisperProjectDir: st.settings!.whisper_project_dir ?? prev.whisperProjectDir,
-          whisperPort: st.settings!.whisper_port ?? prev.whisperPort,
-          whisperAutoStart: st.settings!.whisper_auto_start ?? prev.whisperAutoStart,
-          whisperCloseOnExit: st.settings!.whisper_close_on_exit ?? prev.whisperCloseOnExit,
-        }));
+        const s = st.settings;
+        setConfig((prev) => {
+          const next: EndpointConfig = {
+            ...prev,
+            whisperProjectDir: s.whisper_project_dir ?? prev.whisperProjectDir,
+            whisperPort: s.whisper_port ?? prev.whisperPort,
+            whisperAutoStart: s.whisper_auto_start ?? prev.whisperAutoStart,
+            whisperCloseOnExit: s.whisper_close_on_exit ?? prev.whisperCloseOnExit,
+          };
+          if (isInitialLoad && !diskLlmSyncedRef.current) {
+            diskLlmSyncedRef.current = true;
+            const localSaved = loadSavedLlmConfig();
+            if (s.llm_runtime_mode === 'mock' || s.llm_runtime_mode === 'custom_endpoint') {
+              next.runtimeMode = s.llm_runtime_mode;
+            } else if (localSaved.runtimeMode) {
+              next.runtimeMode = localSaved.runtimeMode;
+            }
+            if (s.llm_base_url) next.llmBaseUrl = s.llm_base_url;
+            if (s.llm_model) next.llmModel = s.llm_model;
+            if (typeof s.llm_api_key === 'string' && s.llm_api_key) {
+              next.llmApiKey = s.llm_api_key;
+              next.llmApiKeyConfigured = Boolean(s.llm_api_key.trim());
+            }
+            if (typeof s.llm_system_prompt === 'string' && s.llm_system_prompt) {
+              next.llmSystemPrompt = s.llm_system_prompt;
+            }
+            saveLlmConfigToStorage(next);
+          }
+          return next;
+        });
       }
     };
 
     whisperApi.getStatus().then((st) => {
       if (!mounted || !st) return;
-      applyWhisperStatus(st);
+      applyWhisperStatus(st, true);
     });
 
     const off = whisperApi.onEvent((evt) => {
       if (!mounted || !evt) return;
-      if (evt.status) applyWhisperStatus(evt.status);
+      if (evt.status) applyWhisperStatus(evt.status, false);
     });
 
     return () => {
@@ -270,7 +304,7 @@ export default function App() {
     if (res?.status) setTdmStatus(res.status);
   }, []);
 
-  // Cloud Whisper Studio handlers
+  // Cloud Whisper Studio handlers & instant live iframe snapshot sync
   const handleStartWhisper = useCallback(async () => {
     const whisperApi = window.joelDesktop?.whisper;
     if (!whisperApi) return;
@@ -319,14 +353,28 @@ export default function App() {
     }
   }, [showToast]);
 
-  const handleOpenWhisperOutputs = useCallback(async () => {
-    const whisperApi = window.joelDesktop?.whisper;
-    if (!whisperApi) return;
-    const res = await whisperApi.openOutputs();
-    if (res && !res.ok && res.error) {
-      showToast(res.error, 'warning');
-    }
-  }, [showToast]);
+  const handleWhisperSnapshotSync = useCallback(
+    (snapshot: { compute?: Record<string, unknown>; settings?: Record<string, unknown> }) => {
+      setWhisperStatus((prev) => ({
+        ...prev,
+        running: true,
+        computeStatus: String(snapshot.compute?.status || prev.computeStatus || 'offline'),
+        computeProvider: String(snapshot.compute?.provider || prev.computeProvider || 'colab'),
+        computeGpu: String(snapshot.compute?.gpu ?? prev.computeGpu ?? ''),
+        pendingTasks: Number(snapshot.compute?.pending_tasks_count ?? prev.pendingTasks ?? 0),
+        whisperRemoteProvider: snapshot.settings
+          ? String(snapshot.settings.provider || prev.whisperRemoteProvider || 'colab')
+          : prev.whisperRemoteProvider,
+        whisperRemoteModel: snapshot.settings
+          ? String(snapshot.settings.whisper_model || prev.whisperRemoteModel || 'large-v3-turbo')
+          : prev.whisperRemoteModel,
+        whisperRemoteLanguage: snapshot.settings
+          ? String(snapshot.settings.language || prev.whisperRemoteLanguage || 'auto')
+          : prev.whisperRemoteLanguage,
+      }));
+    },
+    []
+  );
 
   // Live progress loop for active conversions
   useEffect(() => {
@@ -503,15 +551,59 @@ export default function App() {
       attachments,
       timestamp: nowTimeLabel(),
     };
-    const parsed = parseAgentIntent(text, attachments, config, lang);
+
+    const syncedProvider: ComputeProvider =
+      whisperStatus.whisperRemoteProvider === 'kaggle' ? 'kaggle-t4' : 'colab-t4';
+    const syncedPreset: WhisperPresetId =
+      whisperStatus.whisperRemoteModel === 'small'
+        ? 'fast'
+        : whisperStatus.whisperRemoteModel === 'large-v3'
+          ? 'accurate'
+          : 'balanced';
+    const syncedLanguage: TranscriptLanguage =
+      whisperStatus.whisperRemoteLanguage === 'zh'
+        ? 'zh'
+        : whisperStatus.whisperRemoteLanguage === 'en'
+          ? 'en'
+          : 'auto';
+
+    const parsed = parseAgentIntent(text, attachments, config, lang, {
+      provider: syncedProvider,
+      preset: syncedPreset,
+      language: syncedLanguage,
+    });
+
+    const assistantMsgId = `msg-a-${Date.now() + 1}`;
     const assistantMsg: AgentMessage = {
-      id: `msg-a-${Date.now() + 1}`,
+      id: assistantMsgId,
       role: 'assistant',
       content: parsed.reply,
       action: parsed.action,
       timestamp: nowTimeLabel(),
     };
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
+
+    if (config.runtimeMode === 'custom_endpoint') {
+      setAgentSending(true);
+      callCustomLlmEndpoint(config, text, attachments, lang)
+        .then((res) => {
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id !== assistantMsgId) return m;
+              if (res.ok && res.content) {
+                return { ...m, content: res.content };
+              }
+              return {
+                ...m,
+                content: `${parsed.reply}${res.error ? ` (${res.error})` : ''}`,
+              };
+            })
+          );
+        })
+        .finally(() => {
+          setAgentSending(false);
+        });
+    }
   };
 
   const handleUpdateAgentAction = (
@@ -855,6 +947,8 @@ export default function App() {
           {activeView === 'agent' && (
             <AgentView
               lang={lang}
+              config={config}
+              isSending={agentSending}
               messages={messages}
               onSendMessage={handleSendAgentMessage}
               onUpdateAction={handleUpdateAgentAction}
@@ -877,6 +971,7 @@ export default function App() {
                 onPickDir={handlePickWhisperDir}
                 onOpenSettings={() => setActiveView('settings')}
                 onOpenStandalone={handleOpenWhisperStandalone}
+                onWhisperSnapshotSync={handleWhisperSnapshotSync}
               />
             </div>
           )}
@@ -933,41 +1028,17 @@ export default function App() {
             <SettingsView
               lang={lang}
               config={config}
-              tdmStatus={tdmStatus}
-              whisperStatus={whisperStatus}
-              onPickWhisperDir={handlePickWhisperDir}
-              onOpenWhisperDocked={() => setActiveView('transcribe')}
-              onRestartWhisper={handleRestartWhisper}
-              onOpenWhisperStandalone={handleOpenWhisperStandalone}
-              onOpenWhisperOutputs={handleOpenWhisperOutputs}
-              onPickTdmExe={handlePickTdmExe}
-              onOpenDownloadDocked={() => {
-                setTdmHiddenByUser(false);
-                setActiveView('download');
-              }}
-              onDetachTdm={handleDetachTdm}
               onSaveConfig={(next) => {
                 setConfig(next);
-                if (window.joelDesktop?.tdm && isDesktopTdmSupported()) {
-                  window.joelDesktop.tdm
-                    .saveSettings({
-                      tdm_exe_path: next.tdmExePath.trim(),
-                      tdm_auto_launch: next.tdmAutoLaunch,
-                      tdm_close_on_exit: next.tdmCloseOnExit,
-                      tdm_hide_on_drag: next.tdmHideOnDrag,
-                      tdm_capture_port: next.tdmCapturePort,
-                    })
-                    .then((res) => {
-                      if (res?.status) setTdmStatus(res.status);
-                    });
-                }
+                saveLlmConfigToStorage(next);
                 if (window.joelDesktop?.whisper && isDesktopWhisperSupported()) {
                   window.joelDesktop.whisper
                     .saveSettings({
-                      whisper_project_dir: next.whisperProjectDir.trim(),
-                      whisper_port: next.whisperPort,
-                      whisper_auto_start: next.whisperAutoStart,
-                      whisper_close_on_exit: next.whisperCloseOnExit,
+                      llm_runtime_mode: next.runtimeMode,
+                      llm_base_url: next.llmBaseUrl.trim(),
+                      llm_model: next.llmModel.trim(),
+                      llm_api_key: next.llmApiKey,
+                      llm_system_prompt: next.llmSystemPrompt,
                     })
                     .then((res) => {
                       if (res?.status) setWhisperStatus(res.status);
@@ -975,8 +1046,6 @@ export default function App() {
                 }
                 showToast(t.toasts.configSaved, 'success');
               }}
-              onOpenUpdateModal={handleOpenUpdateModal}
-              onCopyText={handleCopyText}
             />
           )}
         </main>

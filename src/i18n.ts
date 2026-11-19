@@ -101,6 +101,9 @@ export interface Translations {
     docConvert: string;
     convertStarted: string;
     startConvert: string;
+    activeLocalRouter: string;
+    activeCustomModel: (model: string) => string;
+    thinkingCustomLlm: (model: string) => string;
   };
   transcribe: {
     webOnlyTitle: string;
@@ -180,67 +183,21 @@ export interface Translations {
     llmDesc: string;
     modeMock: string;
     modeCustom: string;
+    localRouterNoticeTitle: string;
+    localRouterNoticeDesc: string;
+    quickPresetsLabel: string;
     baseUrl: string;
     modelId: string;
+    apiKeyLabel: string;
+    apiKeyPlaceholder: string;
+    showKey: string;
+    hideKey: string;
+    systemPromptLabel: string;
+    systemPromptPlaceholder: string;
     testing: string;
-    testedOk: string;
+    testedOk: (latencyMs: number, detail: string) => string;
+    testFailed: (detail: string) => string;
     validateEndpoint: string;
-    whisperTitle: string;
-    whisperDesc: string;
-    whisperStatusWeb: string;
-    whisperStatusGpuOnline: (gpu: string) => string;
-    whisperStatusRunning: string;
-    whisperStatusStarting: string;
-    whisperStatusReady: string;
-    whisperStatusMissing: string;
-    whisperProjectDir: string;
-    whisperDirPlaceholder: string;
-    whisperPickDirBtn: string;
-    whisperPort: string;
-    whisperBuiltInSettingsTitle: string;
-    whisperBuiltInSettingsDesc: string;
-    whisperAutoStart: string;
-    whisperCloseOnExit: string;
-    whisperOpenDockedBtn: string;
-    whisperRestartBtn: string;
-    whisperOutputsBtn: string;
-    whisperStandaloneBtn: string;
-    tdmTitle: string;
-    tdmDesc: string;
-    tdmStatusWeb: string;
-    tdmStatusRunning: string;
-    tdmStatusDetached: string;
-    tdmStatusReady: string;
-    tdmStatusMissing: string;
-    tdmExePath: string;
-    tdmExePlaceholder: string;
-    tdmPickExeBtn: string;
-    tdmCapturePort: string;
-    tdmExtensionTitle: string;
-    tdmExtensionDesc: (port: number) => string;
-    tdmAutoLaunch: string;
-    tdmCloseOnExit: string;
-    tdmHideOnDrag: string;
-    tdmOpenDockedBtn: string;
-    tdmDetachBtn: string;
-    converterTitle: string;
-    converterDesc: string;
-    converterUrl: string;
-    githubTitle: string;
-    githubDesc: string;
-    openUpdateBtn: string;
-    githubRepo: string;
-    githubBranch: string;
-    autoCheckStartup: string;
-    protocolTitle: string;
-    protocolDesc: string;
-    copy: string;
-    protocols: {
-      llm: string;
-      transcribe: string;
-      tdmCapture: string;
-      convert: string;
-    };
     saveConfig: string;
   };
   updateModal: {
@@ -282,7 +239,7 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       transcribe: 'Transcription',
       download: 'Downloader',
       convert: 'Converter',
-      settings: 'Models & API',
+      settings: 'AI Model Settings',
     },
     sidebar: {
       closeSidebar: 'Close sidebar',
@@ -311,7 +268,7 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       whisperDropFilePrompt: 'Drop your audio or video file into Cloud Whisper Studio',
       tdmDispatched: 'Sent link to TDM Fast',
       tdmDispatchFailed: 'Could not reach TDM Fast capture port',
-      tdmMissingExe: 'Select your local TDM Fast .exe in Downloader or Settings first',
+      tdmMissingExe: 'Select your local TDM Fast .exe in Downloader first',
       tdmExeSelected: (name) => `Selected TDM executable: ${name}`,
       tdmDetached: 'Detached TDM Fast into standalone window',
       tdmReattached: 'Docked TDM Fast back into Downloader view',
@@ -322,7 +279,7 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       localUpdated: 'Local client updated to latest GitHub version',
       convertingTo: (fmt) => `Converting to ${fmt}`,
       batchConvertStarted: 'Started batch format conversion',
-      configSaved: 'Configuration saved',
+      configSaved: 'AI model settings saved & synced',
       cleanUrlLabel: 'clean URL',
       terminalCmdLabel: 'update command',
       mdPlainLabel: 'plain Markdown',
@@ -358,6 +315,9 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       docConvert: 'Format Conversion',
       convertStarted: 'Converting · View',
       startConvert: 'Start Conversion',
+      activeLocalRouter: 'Built-in Local Router',
+      activeCustomModel: (model) => `Model: ${model}`,
+      thinkingCustomLlm: (model) => `Waiting for ${model}…`,
     },
     transcribe: {
       webOnlyTitle: 'Cloud Whisper Studio Not Detected',
@@ -368,7 +328,7 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       missingDirDesc:
         'Select your local cloud-whisper-studio project folder once. After that, Joel Desk Pro automatically starts and embeds your Colab / Kaggle transcription studio here.',
       pickDirBtn: 'Select Project Folder',
-      openSettingsBtn: 'Open Settings',
+      openSettingsBtn: 'Home AI Settings',
       startingTitle: 'Starting Cloud Whisper Studio…',
       startingDesc: 'Launching local FastAPI + ffmpeg backend and loading your GPU workspace.',
       readyTitle: 'Cloud Whisper Studio Stopped',
@@ -439,78 +399,29 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
         `Joel Desk Pro Format Conversion Output\nSource: ${source}\nTarget: ${target}\n`,
     },
     settings: {
-      llmTitle: 'AI Model Endpoint',
+      llmTitle: 'Home AI Model Configuration',
       llmDesc:
-        'Compatible with Ollama, LM Studio, vLLM, and OpenAI-compatible APIs for Agent routing',
+        'Configure the AI engine used by the AI Agent home workspace. Changes are persisted and synced immediately.',
       modeMock: 'Built-in Local Router',
-      modeCustom: 'Custom Endpoint',
-      baseUrl: 'Base URL',
+      modeCustom: 'Custom LLM Endpoint',
+      localRouterNoticeTitle: 'Zero-config Instant Routing',
+      localRouterNoticeDesc:
+        'Automatically cleans URLs for TDM Fast, prepares Cloud Whisper Studio uploads, and suggests document conversion targets offline.',
+      quickPresetsLabel: 'Quick Endpoint Presets',
+      baseUrl: 'Base URL (OpenAI-compatible)',
       modelId: 'Model ID',
-      testing: 'Validating…',
-      testedOk: 'Endpoint format valid',
-      validateEndpoint: 'Validate Format',
-      whisperTitle: 'Cloud Whisper Studio Integration',
-      whisperDesc:
-        'Automatically launch and embed your local Cloud Whisper Studio inside the Transcription workbench with native Save As support',
-      whisperStatusWeb: 'Desktop App Only',
-      whisperStatusGpuOnline: (gpu) => `GPU Online · ${gpu}`,
-      whisperStatusRunning: 'Running · Embedded',
-      whisperStatusStarting: 'Starting…',
-      whisperStatusReady: 'Folder Located',
-      whisperStatusMissing: 'Folder Not Found',
-      whisperProjectDir: 'Local Cloud Whisper Studio Folder',
-      whisperDirPlaceholder: 'Select folder containing backend/main.py',
-      whisperPickDirBtn: 'Browse Folder',
-      whisperPort: 'Local Service Port',
-      whisperBuiltInSettingsTitle: 'Colab / Kaggle & Model Settings',
-      whisperBuiltInSettingsDesc:
-        'Configure Colab GPU tier, Kaggle credentials, Whisper model, and idle auto-shutdown directly inside Cloud Whisper Studio ⚙ Settings.',
-      whisperAutoStart: 'Auto-start Cloud Whisper Studio backend when launching Joel Desk Pro',
-      whisperCloseOnExit: 'Stop managed Cloud Whisper Studio backend when quitting Joel Desk Pro',
-      whisperOpenDockedBtn: 'Open Transcription Workbench',
-      whisperRestartBtn: 'Restart Backend',
-      whisperOutputsBtn: 'Open Outputs Folder',
-      whisperStandaloneBtn: 'Launch Standalone',
-      tdmTitle: 'TDM Fast Downloader Integration',
-      tdmDesc:
-        'Dock your local TDM Fast window directly inside Downloader while keeping the native Chrome TDM extension running intact',
-      tdmStatusWeb: 'Desktop App Only',
-      tdmStatusRunning: 'Running & Docked',
-      tdmStatusDetached: 'Running Standalone',
-      tdmStatusReady: 'Executable Ready',
-      tdmStatusMissing: 'Path Not Set',
-      tdmExePath: 'Local TDM Fast Executable (.exe)',
-      tdmExePlaceholder: 'Select TDM_Fast_*.exe on your PC',
-      tdmPickExeBtn: 'Browse .exe',
-      tdmCapturePort: 'TDM Capture Port',
-      tdmExtensionTitle: 'Chrome Native TDM Extension',
-      tdmExtensionDesc: (port) =>
-        `Keep using the original TDM Fast Chrome extension as-is (127.0.0.1:${port}). Captures automatically wake Downloader.`,
-      tdmAutoLaunch: 'Auto-launch & dock TDM when entering Downloader',
-      tdmCloseOnExit: 'Close TDM process when quitting Joel Desk Pro',
-      tdmHideOnDrag: 'Temporarily hide TDM while dragging window',
-      tdmOpenDockedBtn: 'Open & Dock Downloader',
-      tdmDetachBtn: 'Pop Out Standalone',
-      converterTitle: 'Document & Media Converter',
-      converterDesc: 'Configure local LibreOffice / Pandoc conversion backend endpoint',
-      converterUrl: 'Converter Service URL',
-      githubTitle: 'GitHub Client Updates',
-      githubDesc:
-        'Pull updates from GitHub via local Git (works with private repos) or check remote commits when public',
-      openUpdateBtn: 'Open Updater',
-      githubRepo: 'GitHub Repository (owner/repo)',
-      githubBranch: 'Branch',
-      autoCheckStartup: 'Check GitHub automatically on startup (requires public repo)',
-      protocolTitle: 'Backend JSON Protocol Reference',
-      protocolDesc: 'Inspect the 4 standard local adapter request schemas',
-      copy: 'Copy',
-      protocols: {
-        llm: 'LLM Intent Router (OpenAI-compatible)',
-        transcribe: 'Cloud Whisper Studio (/api/transcribe)',
-        tdmCapture: 'TDM Native Capture Endpoint',
-        convert: 'Document Format Conversion',
-      },
-      saveConfig: 'Save Configuration',
+      apiKeyLabel: 'API Key (Optional for local Ollama / LM Studio)',
+      apiKeyPlaceholder: 'sk-...',
+      showKey: 'Show API Key',
+      hideKey: 'Hide API Key',
+      systemPromptLabel: 'Custom System Prompt (Optional)',
+      systemPromptPlaceholder:
+        'Optional instructions for the Home AI Assistant behavior, tone, or language...',
+      testing: 'Testing…',
+      testedOk: (latencyMs, detail) => `Connected (${latencyMs}ms · ${detail})`,
+      testFailed: (detail) => `Connection failed: ${detail}`,
+      validateEndpoint: 'Test Connection',
+      saveConfig: 'Save & Sync to Home',
     },
     updateModal: {
       title: 'Joel Desk Pro Updates',
@@ -553,7 +464,7 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       transcribe: '语音转录',
       download: '高速下载',
       convert: '格式转换',
-      settings: '模型与接口',
+      settings: 'AI 模型设置',
     },
     sidebar: {
       closeSidebar: '关闭侧边栏',
@@ -582,7 +493,7 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       whisperDropFilePrompt: '请将音视频直接拖入下方的 Cloud Whisper Studio 上传区',
       tdmDispatched: '已将链接发送给 TDM Fast',
       tdmDispatchFailed: '无法连接 TDM Fast 接收端口，请确认已启动',
-      tdmMissingExe: '请先在「高速下载」或「模型与接口」中选择本机 TDM Fast 程序路径',
+      tdmMissingExe: '请先在「高速下载」中选择本机 TDM Fast 程序路径',
       tdmExeSelected: (name) => `已选定 TDM 程序：${name}`,
       tdmDetached: '已将 TDM Fast 弹出为独立窗口',
       tdmReattached: '已将 TDM Fast 重新贴合回工具箱',
@@ -593,7 +504,7 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       localUpdated: '本地客户端已更新至 GitHub 最新版本',
       convertingTo: (fmt) => `正在转换为 ${fmt}`,
       batchConvertStarted: '已开始批量格式转换',
-      configSaved: '配置已保存',
+      configSaved: 'AI 模型配置已保存并同步到主页',
       cleanUrlLabel: '纯链接',
       terminalCmdLabel: '终端更新命令',
       mdPlainLabel: '无时间轴 Markdown',
@@ -628,6 +539,9 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       docConvert: '文档格式转换',
       convertStarted: '已开始转换 · 查看',
       startConvert: '开始转换',
+      activeLocalRouter: '内置本地智能路由',
+      activeCustomModel: (model) => `当前模型：${model}`,
+      thinkingCustomLlm: (model) => `正在请求 ${model}…`,
     },
     transcribe: {
       webOnlyTitle: '未检测到 Cloud Whisper Studio 本地服务',
@@ -638,7 +552,7 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       missingDirDesc:
         '选择一次电脑上的 cloud-whisper-studio 工程文件夹后，点击「语音转录」会自动无黑框启动并在当前区域无缝运行 Colab / Kaggle 云端听写。',
       pickDirBtn: '浏览选择项目目录',
-      openSettingsBtn: '打开设置',
+      openSettingsBtn: '前往设置',
       startingTitle: '正在启动 Cloud Whisper Studio…',
       startingDesc: '正在后台拉起 FastAPI 听写服务与 ffmpeg 音频瘦身管道，马上就绪。',
       readyTitle: 'Cloud Whisper Studio 未运行',
@@ -664,7 +578,7 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       missingExeDesc:
         '选择一次电脑上的 TDM Fast 主程序路径后，点击「高速下载」会自动启动并贴合进此区域；你的 Chrome 原版 TDM 插件继续按原方式工作。',
       pickExeBtn: '选择 TDM Fast (.exe)',
-      openSettingsBtn: '打开设置',
+      openSettingsBtn: '前往设置',
       startingTitle: '正在启动并贴合 TDM Fast…',
       startingDesc: '正在等待原生 TDM 窗口就绪并对齐到工作台区域。',
       detachedTitle: 'TDM Fast 已弹出为独立窗口',
@@ -708,76 +622,28 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
         `Joel Desk Pro 格式转换输出\n源文件: ${source}\n目标格式: ${target}\n`,
     },
     settings: {
-      llmTitle: 'AI 大模型接口',
-      llmDesc: '兼容 Ollama、LM Studio、vLLM 及标准 OpenAI API 协议，供 AI 助手调度工具',
+      llmTitle: '主页 AI 模型配置',
+      llmDesc:
+        '专门用于设置「AI 助手」主页所使用的推理引擎与大模型 API，保存后将持久生效并实时同步至主页。',
       modeMock: '内置本地路由',
-      modeCustom: '本地/自定义端点',
-      baseUrl: 'Base URL',
-      modelId: '模型标识 (Model ID)',
-      testing: '检测中…',
-      testedOk: '接口格式校验通过',
-      validateEndpoint: '校验端点格式',
-      whisperTitle: 'Cloud Whisper Studio 转录集成',
-      whisperDesc:
-        '自动托管并无缝内嵌本机 Cloud Whisper Studio，复用真实 Colab / Kaggle GPU 与系统原生另存为保存弹窗',
-      whisperStatusWeb: '仅桌面版可用',
-      whisperStatusGpuOnline: (gpu) => `绿灯就绪 · ${gpu}`,
-      whisperStatusRunning: '运行中 · 已内嵌',
-      whisperStatusStarting: '启动中…',
-      whisperStatusReady: '已定位目录',
-      whisperStatusMissing: '未定位目录',
-      whisperProjectDir: '本机 Cloud Whisper Studio 项目目录',
-      whisperDirPlaceholder: '请选择包含 backend/main.py 的工程目录',
-      whisperPickDirBtn: '浏览选择目录',
-      whisperPort: '本地监听端口',
-      whisperBuiltInSettingsTitle: '算力与模型详细设置',
-      whisperBuiltInSettingsDesc:
-        'Colab GPU 规格、Kaggle 凭据（kaggle.json）、Whisper 模型及闲置自动关机开关直接在「语音转录」右上角 ⚙ 设置中管理。',
-      whisperAutoStart: '启动 Joel Desk Pro 时自动拉起 Cloud Whisper Studio 后端',
-      whisperCloseOnExit: '关闭 Joel Desk Pro 时同时停止其托管的后端进程',
-      whisperOpenDockedBtn: '前往语音转录',
-      whisperRestartBtn: '重启后端服务',
-      whisperOutputsBtn: '打开输出目录',
-      whisperStandaloneBtn: '独立窗口运行',
-      tdmTitle: 'TDM Fast 下载器集成',
-      tdmDesc: '将本机 TDM Fast 界面直接贴合进「高速下载」，Chrome 继续直接使用原版 TDM Fast 插件',
-      tdmStatusWeb: '仅桌面版可用',
-      tdmStatusRunning: '运行中 · 已贴合',
-      tdmStatusDetached: '独立窗口运行中',
-      tdmStatusReady: '已定位程序',
-      tdmStatusMissing: '未找到程序',
-      tdmExePath: '本机 TDM Fast 程序路径 (.exe)',
-      tdmExePlaceholder: '请选择本机 TDM_Fast_*.exe 路径',
-      tdmPickExeBtn: '浏览选择 .exe',
-      tdmCapturePort: 'TDM 接收端口',
-      tdmExtensionTitle: 'Chrome 原版 TDM 插件直连',
-      tdmExtensionDesc: (port) =>
-        `继续使用浏览器原本安装的 TDM Fast 插件（端口 127.0.0.1:${port}），捕获任务时工具箱会自动切到下载页。`,
-      tdmAutoLaunch: '切换到「高速下载」时自动启动并贴合 TDM',
-      tdmCloseOnExit: '关闭 Joel Desk Pro 时同时退出 TDM 进程',
-      tdmHideOnDrag: '拖动主窗口时暂隐 TDM（松手即贴回）',
-      tdmOpenDockedBtn: '前往下载并贴合',
-      tdmDetachBtn: '独立窗口弹出',
-      converterTitle: '文档与格式转换接口',
-      converterDesc: '配置本地 LibreOffice / Pandoc 格式转换后端地址',
-      converterUrl: '文档转换服务地址',
-      githubTitle: 'GitHub 客户端更新',
-      githubDesc:
-        '私有仓库可直接用本机 Git 一键拉取；如需在网页内在线检测最新提交，可临时公开仓库后点击检查',
-      openUpdateBtn: '打开更新面板',
-      githubRepo: 'GitHub 仓库 (owner/repo)',
-      githubBranch: '更新分支 (Branch)',
-      autoCheckStartup: '启动时自动检测 GitHub 最新提交（需公开仓库）',
-      protocolTitle: '后端对接 JSON 协议参考',
-      protocolDesc: '查看当前保留的 4 个标准本地接口结构',
-      copy: '复制',
-      protocols: {
-        llm: '大模型意图路由 (OpenAI 兼容)',
-        transcribe: 'Cloud Whisper Studio (/api/transcribe)',
-        tdmCapture: 'TDM 原生任务接收端口',
-        convert: '文档格式转换',
-      },
-      saveConfig: '保存配置',
+      modeCustom: '自定义大模型接口',
+      localRouterNoticeTitle: '零配置极速智能调度',
+      localRouterNoticeDesc:
+        '无需外部密钥即可离线运行：自动清洗链接派发给 TDM Fast、把音视频直传 Cloud Whisper Studio，并智能匹配文档转换目标格式。',
+      quickPresetsLabel: '常用接口预设（点击快速填充）',
+      baseUrl: 'Base URL（OpenAI 兼容格式）',
+      modelId: '模型名称 (Model ID)',
+      apiKeyLabel: 'API Key（Ollama / LM Studio 本地部署可留空）',
+      apiKeyPlaceholder: 'sk-...',
+      showKey: '显示密钥',
+      hideKey: '隐藏密钥',
+      systemPromptLabel: '自定义系统提示词 System Prompt（选填）',
+      systemPromptPlaceholder: '可选：限定主页 AI 助手的人设、回复风格或常用规则…',
+      testing: '连接测试中…',
+      testedOk: (latencyMs, detail) => `连接成功 (${latencyMs}ms · ${detail})`,
+      testFailed: (detail) => `连接失败：${detail}`,
+      validateEndpoint: '测试连接',
+      saveConfig: '保存并同步到主页',
     },
     updateModal: {
       title: 'Joel Desk Pro 版本更新',

@@ -21,6 +21,10 @@ interface TranscribeViewProps {
   onPickDir: () => void;
   onOpenSettings: () => void;
   onOpenStandalone: () => void;
+  onWhisperSnapshotSync?: (snapshot: {
+    compute?: Record<string, unknown>;
+    settings?: Record<string, unknown>;
+  }) => void;
 }
 
 export function TranscribeView({
@@ -34,9 +38,13 @@ export function TranscribeView({
   onPickDir,
   onOpenSettings,
   onOpenStandalone,
+  onWhisperSnapshotSync,
 }: TranscribeViewProps) {
   const t = TRANSLATIONS[lang].transcribe;
   const autoTriedRef = useRef(false);
+  const initialLangRef = useRef(lang);
+  const langRef = useRef(lang);
+  langRef.current = lang;
   const [webBackendOnline, setWebBackendOnline] = useState(false);
 
   const probeWebBackend = useCallback(async () => {
@@ -89,13 +97,35 @@ export function TranscribeView({
     } catch {}
   }, [isActive, whisperStatus.running, iframeRef]);
 
-  // Handle native Desktop bridge calls from embedded Cloud Whisper Studio iframe
+  // Sync EN/ZH language live into embedded iframe without reloading it
+  useEffect(() => {
+    try {
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: 'cw-parent-cmd', cmd: 'set-lang', lang },
+        '*'
+      );
+    } catch {}
+  }, [lang, whisperStatus.running, iframeRef]);
+
+  // Handle native Desktop bridge calls & state sync from embedded Cloud Whisper Studio iframe
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
       const data = event.data;
-      if (!data || typeof data !== 'object' || data.type !== 'cw-host-action') return;
+      if (!data || typeof data !== 'object') return;
       const frameWin = iframeRef.current?.contentWindow;
       if (frameWin && event.source && event.source !== frameWin) return;
+
+      if (data.type === 'cw-state-updated' && data.snapshot) {
+        onWhisperSnapshotSync?.(
+          data.snapshot as {
+            compute?: Record<string, unknown>;
+            settings?: Record<string, unknown>;
+          }
+        );
+        return;
+      }
+
+      if (data.type !== 'cw-host-action') return;
 
       const requestId = data.requestId;
       const action = String(data.action || '');
@@ -156,7 +186,7 @@ export function TranscribeView({
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [iframeRef, t.desktopBridgeUnavailable]);
+  }, [iframeRef, onWhisperSnapshotSync, t.desktopBridgeUnavailable]);
 
   const showEmbeddedFrame = whisperStatus.running || (!whisperStatus.supported && webBackendOnline);
 
@@ -166,9 +196,17 @@ export function TranscribeView({
         <iframe
           ref={iframeRef}
           key={`${whisperStatus.url}-${reloadNonce}`}
-          src={`${whisperStatus.url}/?embedded=1`}
+          src={`${whisperStatus.url}/?embedded=1&lang=${initialLangRef.current}`}
           allow="clipboard-read; clipboard-write"
           title="Cloud Whisper Studio"
+          onLoad={() => {
+            try {
+              iframeRef.current?.contentWindow?.postMessage(
+                { type: 'cw-parent-cmd', cmd: 'set-lang', lang: langRef.current },
+                '*'
+              );
+            } catch {}
+          }}
           className="block h-full w-full border-0 bg-[#F8F9FA]"
         />
       </div>
