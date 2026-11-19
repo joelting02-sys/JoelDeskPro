@@ -1,59 +1,10 @@
 export type WorkspaceView = 'agent' | 'transcribe' | 'download' | 'convert' | 'settings';
 
 export type ComputeProvider = 'colab-t4' | 'kaggle-t4';
-export type ComputeStatus = 'offline' | 'starting' | 'online' | 'stopping' | 'error';
-export type ColabGpuSpec = 'T4' | 'L4' | 'A100';
-export type IdleShutdownMinutes = 10 | 15 | 30;
 export type WhisperPresetId = 'fast' | 'balanced' | 'accurate';
 export type TranscriptOutputFormat = 'srt' | 'md_plain' | 'txt';
 export type TranscriptLanguage = 'auto' | 'zh' | 'en';
-
-export interface ComputeRuntimeState {
-  status: ComputeStatus;
-  provider: ComputeProvider;
-  gpu: ColabGpuSpec | 'T4 x2';
-  model: string;
-  startedAt: number | null;
-  lastActivityAt: number | null;
-  idleRemainingSeconds: number | null;
-  orphanColabCount: number;
-  colabAuthed: boolean;
-  kaggleAuthed: boolean;
-  errorMessage?: string | null;
-}
-
 export type MediaKind = 'audio' | 'video';
-
-export type TranscriptionStage =
-  | 'queued'
-  | 'extracting_audio'
-  | 'connecting_gpu'
-  | 'downloading_model'
-  | 'transcribing'
-  | 'completed';
-
-export interface TranscriptSegment {
-  start: string;
-  end: string;
-  text: string;
-}
-
-export interface TranscriptionTask {
-  id: string;
-  fileName: string;
-  fileSizeBytes: number;
-  mediaKind: MediaKind;
-  needsAudioExtract: boolean;
-  provider: ComputeProvider;
-  preset: WhisperPresetId;
-  outputFormat: TranscriptOutputFormat;
-  language: TranscriptLanguage;
-  stage: TranscriptionStage;
-  progress: number;
-  createdAt: string;
-  segments: TranscriptSegment[];
-  source: 'agent' | 'manual';
-}
 
 export type DocumentFormat =
   | 'pdf'
@@ -91,6 +42,7 @@ export interface AttachedFileItem {
   size: number;
   category: 'audio' | 'video' | 'document' | 'other';
   extension: string;
+  rawFile?: File;
 }
 
 export type AgentActionPayload =
@@ -111,6 +63,7 @@ export type AgentActionPayload =
       preset: WhisperPresetId;
       outputFormat: TranscriptOutputFormat;
       language: TranscriptLanguage;
+      rawFile?: File;
       dispatchedTaskId?: string;
     }
   | {
@@ -136,12 +89,10 @@ export interface EndpointConfig {
   llmModel: string;
   llmApiKeyConfigured: boolean;
   runtimeMode: 'mock' | 'custom_endpoint';
-  colabBridgeUrl: string;
-  kaggleBridgeUrl: string;
-  colabGpuSpec: ColabGpuSpec;
-  autoShutdownEnabled: boolean;
-  autoShutdownMinutes: IdleShutdownMinutes;
-  ffmpegAutoExtract: boolean;
+  whisperProjectDir: string;
+  whisperPort: number;
+  whisperAutoStart: boolean;
+  whisperCloseOnExit: boolean;
   chromeBridgePort: number;
   chromeBridgeToken: string;
   tdmExePath: string;

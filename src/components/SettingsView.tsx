@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  AudioWaveform,
   Check,
   ChevronDown,
   ChevronUp,
@@ -11,20 +12,23 @@ import {
   RefreshCw,
   Save,
 } from 'lucide-react';
-import {
-  ColabGpuSpec,
-  EndpointConfig,
-  IdleShutdownMinutes,
-} from '../types/toolkit';
+import { EndpointConfig } from '../types/toolkit';
 import { API_PROTOCOL_SNIPPETS } from '../services/toolkitAdapter';
 import { TdmStatus } from '../services/tdmBridge';
+import { WhisperStatus } from '../services/whisperBridge';
 import { AppLanguage, TRANSLATIONS } from '../i18n';
 
 interface SettingsViewProps {
   lang: AppLanguage;
   config: EndpointConfig;
   tdmStatus: TdmStatus;
+  whisperStatus: WhisperStatus;
   onSaveConfig: (next: EndpointConfig) => void;
+  onPickWhisperDir: () => void;
+  onOpenWhisperDocked: () => void;
+  onRestartWhisper: () => void;
+  onOpenWhisperStandalone: () => void;
+  onOpenWhisperOutputs: () => void;
   onPickTdmExe: () => void;
   onOpenDownloadDocked: () => void;
   onDetachTdm: () => void;
@@ -36,7 +40,13 @@ export function SettingsView({
   lang,
   config,
   tdmStatus,
+  whisperStatus,
   onSaveConfig,
+  onPickWhisperDir,
+  onOpenWhisperDocked,
+  onRestartWhisper,
+  onOpenWhisperStandalone,
+  onOpenWhisperOutputs,
   onPickTdmExe,
   onOpenDownloadDocked,
   onDetachTdm,
@@ -142,105 +152,178 @@ export function SettingsView({
           </div>
         </section>
 
-        {/* Cloud T4 Compute Bridge */}
+        {/* Cloud Whisper Studio Embedded Integration */}
         <section className="rounded-panel border border-[#E5E7EB] bg-white p-5">
-          <h2 className="text-[15px] font-semibold text-[#0F172A]">{t.settings.cloudTitle}</h2>
-          <p className="mt-0.5 text-[12px] text-[#64748B]">{t.settings.cloudDesc}</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-[15px] font-semibold text-[#0F172A]">
+                {t.settings.whisperTitle}
+              </h2>
+              <p className="mt-0.5 text-[12px] text-[#64748B]">{t.settings.whisperDesc}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-inner px-2.5 py-1 font-mono text-[11px] font-medium ${
+                  !whisperStatus.supported
+                    ? 'bg-[#F3F4F6] text-[#64748B]'
+                    : whisperStatus.running
+                      ? whisperStatus.computeStatus === 'online'
+                        ? 'bg-[#F0FDF4] text-[#15803D]'
+                        : 'bg-[#EFF6FF] text-[#1D4ED8]'
+                      : whisperStatus.starting
+                        ? 'bg-[#FFFBEB] text-[#B45309]'
+                        : whisperStatus.projectExists
+                          ? 'bg-[#EFF6FF] text-[#1D4ED8]'
+                          : 'bg-[#FEF2F2] text-[#B91C1C]'
+                }`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    !whisperStatus.supported
+                      ? 'bg-[#94A3B8]'
+                      : whisperStatus.running
+                        ? whisperStatus.computeStatus === 'online'
+                          ? 'bg-[#16A34A]'
+                          : 'bg-[#2563EB]'
+                        : whisperStatus.starting
+                          ? 'bg-[#D97706]'
+                          : whisperStatus.projectExists
+                            ? 'bg-[#2563EB]'
+                            : 'bg-[#DC2626]'
+                  }`}
+                />
+                {!whisperStatus.supported
+                  ? t.settings.whisperStatusWeb
+                  : whisperStatus.running
+                    ? whisperStatus.computeStatus === 'online'
+                      ? t.settings.whisperStatusGpuOnline(whisperStatus.computeGpu || 'GPU')
+                      : t.settings.whisperStatusRunning
+                    : whisperStatus.starting
+                      ? t.settings.whisperStatusStarting
+                      : whisperStatus.projectExists
+                        ? t.settings.whisperStatusReady
+                        : t.settings.whisperStatusMissing}
+              </span>
+            </div>
+          </div>
 
-          <div className="mt-4 space-y-3.5">
+          <div className="mt-4 space-y-4">
             <div>
               <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                {t.settings.colabUrl}
+                {t.settings.whisperProjectDir}
               </label>
-              <input
-                type="text"
-                value={form.colabBridgeUrl}
-                onChange={(e) => setForm((prev) => ({ ...prev, colabBridgeUrl: e.target.value }))}
-                className="h-9 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[13px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  value={form.whisperProjectDir}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, whisperProjectDir: e.target.value }))
+                  }
+                  placeholder={t.settings.whisperDirPlaceholder}
+                  className="h-9 min-w-[260px] flex-1 rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[12px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={!whisperStatus.supported}
+                  onClick={onPickWhisperDir}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 text-[12px] font-medium text-[#0F172A] hover:border-[#2563EB] hover:text-[#2563EB] disabled:opacity-50 whitespace-nowrap"
+                >
+                  <FolderOpen className="h-3.5 w-3.5" />
+                  {t.settings.whisperPickDirBtn}
+                </button>
+              </div>
             </div>
-            <div>
-              <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                {t.settings.kaggleUrl}
-              </label>
-              <input
-                type="text"
-                value={form.kaggleBridgeUrl}
-                onChange={(e) => setForm((prev) => ({ ...prev, kaggleBridgeUrl: e.target.value }))}
-                className="h-9 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[13px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none"
-              />
-            </div>
-            <div className="grid grid-cols-1 gap-4 pt-1 sm:grid-cols-2">
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                  {t.settings.colabGpuSpec}
+                  {t.settings.whisperPort}
                 </label>
-                <div className="inline-flex h-9 items-center gap-1 rounded-control bg-[#F3F4F6] p-1">
-                  {(['T4', 'L4', 'A100'] as ColabGpuSpec[]).map((gpu) => (
-                    <button
-                      key={gpu}
-                      type="button"
-                      onClick={() => setForm((prev) => ({ ...prev, colabGpuSpec: gpu }))}
-                      className={`rounded-inner px-3 py-1 font-mono text-[12px] font-medium transition-colors ${
-                        form.colabGpuSpec === gpu
-                          ? 'bg-white text-[#0F172A] shadow-xs'
-                          : 'text-[#64748B] hover:text-[#0F172A]'
-                      }`}
-                    >
-                      {gpu}
-                    </button>
-                  ))}
-                </div>
+                <input
+                  type="number"
+                  min={1024}
+                  max={65535}
+                  value={form.whisperPort}
+                  onChange={(e) => {
+                    const port = Number(e.target.value);
+                    if (Number.isFinite(port)) {
+                      setForm((prev) => ({ ...prev, whisperPort: port }));
+                    }
+                  }}
+                  className="h-9 w-full rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3 font-mono text-[13px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none tabular-nums"
+                />
               </div>
 
-              <div>
-                <label className="mb-1.5 block text-[12px] font-medium text-[#475569]">
-                  {t.settings.autoShutdownMinutes}
-                </label>
-                <div className="inline-flex h-9 items-center gap-1 rounded-control bg-[#F3F4F6] p-1">
-                  {([10, 15, 30] as IdleShutdownMinutes[]).map((mins) => (
-                    <button
-                      key={mins}
-                      type="button"
-                      onClick={() => setForm((prev) => ({ ...prev, autoShutdownMinutes: mins }))}
-                      className={`rounded-inner px-3 py-1 font-mono text-[12px] font-medium transition-colors tabular-nums ${
-                        form.autoShutdownMinutes === mins
-                          ? 'bg-white text-[#0F172A] shadow-xs'
-                          : 'text-[#64748B] hover:text-[#0F172A]'
-                      }`}
-                    >
-                      {t.transcribe.compute.minutesUnit(mins)}
-                    </button>
-                  ))}
-                </div>
+              <div className="rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-3.5 py-2.5 text-[12px] leading-relaxed text-[#475569]">
+                <span className="font-medium text-[#0F172A]">
+                  {t.settings.whisperBuiltInSettingsTitle}
+                </span>
+                <p className="mt-0.5">{t.settings.whisperBuiltInSettingsDesc}</p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-1 text-[13px] text-[#0F172A]">
-              <label className="flex items-center gap-2.5">
+              <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={form.autoShutdownEnabled}
+                  checked={form.whisperAutoStart}
                   onChange={(e) =>
-                    setForm((prev) => ({ ...prev, autoShutdownEnabled: e.target.checked }))
+                    setForm((prev) => ({ ...prev, whisperAutoStart: e.target.checked }))
                   }
                   className="h-4 w-4 rounded-inner border-[#CBD5E1] accent-[#2563EB]"
                 />
-                <span>{t.settings.autoShutdownTitle}</span>
+                <span>{t.settings.whisperAutoStart}</span>
               </label>
 
-              <label className="flex items-center gap-2.5">
+              <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={form.ffmpegAutoExtract}
+                  checked={form.whisperCloseOnExit}
                   onChange={(e) =>
-                    setForm((prev) => ({ ...prev, ffmpegAutoExtract: e.target.checked }))
+                    setForm((prev) => ({ ...prev, whisperCloseOnExit: e.target.checked }))
                   }
                   className="h-4 w-4 rounded-inner border-[#CBD5E1] accent-[#2563EB]"
                 />
-                <span>{t.settings.ffmpegExtract}</span>
+                <span>{t.settings.whisperCloseOnExit}</span>
               </label>
             </div>
+
+            {whisperStatus.supported && (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={onOpenWhisperDocked}
+                  className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#0F172A] hover:border-[#2563EB] hover:text-[#2563EB] whitespace-nowrap"
+                >
+                  <AudioWaveform className="h-3.5 w-3.5" />
+                  {t.settings.whisperOpenDockedBtn}
+                </button>
+                <button
+                  type="button"
+                  onClick={onRestartWhisper}
+                  className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:text-[#0F172A] whitespace-nowrap"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  {t.settings.whisperRestartBtn}
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenWhisperOutputs}
+                  className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:text-[#0F172A] whitespace-nowrap"
+                >
+                  <FolderOpen className="h-3.5 w-3.5" />
+                  {t.settings.whisperOutputsBtn}
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenWhisperStandalone}
+                  className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:text-[#0F172A] whitespace-nowrap"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  {t.settings.whisperStandaloneBtn}
+                </button>
+              </div>
+            )}
           </div>
         </section>
 

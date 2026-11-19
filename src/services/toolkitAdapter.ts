@@ -5,9 +5,6 @@ import {
   DocumentFormat,
   EndpointConfig,
   MediaKind,
-  TranscriptLanguage,
-  TranscriptOutputFormat,
-  TranscriptSegment,
   WhisperPresetId,
 } from '../types/toolkit';
 import { AppLanguage } from '../i18n';
@@ -137,12 +134,10 @@ export const DEFAULT_ENDPOINT_CONFIG: EndpointConfig = {
   llmModel: 'qwen2.5:14b',
   llmApiKeyConfigured: false,
   runtimeMode: 'mock',
-  colabBridgeUrl: 'https://your-colab-tunnel.trycloudflare.com/api/transcribe',
-  kaggleBridgeUrl: 'https://your-kaggle-worker.trycloudflare.com/api/transcribe',
-  colabGpuSpec: 'T4',
-  autoShutdownEnabled: false,
-  autoShutdownMinutes: 15,
-  ffmpegAutoExtract: true,
+  whisperProjectDir: '',
+  whisperPort: 8788,
+  whisperAutoStart: true,
+  whisperCloseOnExit: true,
   chromeBridgePort: 17890,
   chromeBridgeToken: 'joeldeskpro-local-bridge',
   tdmExePath: '',
@@ -469,6 +464,7 @@ export function parseAgentIntent(
         preset,
         outputFormat: wantsMdPlain ? 'md_plain' : trimmed.toLowerCase().includes('txt') ? 'txt' : 'srt',
         language: 'auto',
+        rawFile: mediaAttachment.rawFile,
       },
     };
   }
@@ -531,79 +527,6 @@ export function parseAgentIntent(
   };
 }
 
-export function generateSimulatedTranscript(
-  fileName: string,
-  preset: WhisperPresetId,
-  language: TranscriptLanguage,
-  appLang: AppLanguage = 'en'
-): TranscriptSegment[] {
-  const isChinese = language === 'zh' || (language === 'auto' && appLang === 'zh');
-  if (!isChinese) {
-    return [
-      {
-        start: '00:00:00,400',
-        end: '00:00:04,850',
-        text: `Loaded ${fileName} on remote T4 GPU with ${WHISPER_PRESETS_BY_LANG.en[preset].modelName}.`,
-      },
-      {
-        start: '00:00:05,120',
-        end: '00:00:10,640',
-        text: 'First, we separate the audio track cleanly and normalize speech segments for fast batched decoding.',
-      },
-      {
-        start: '00:00:11,050',
-        end: '00:00:16,900',
-        text: 'Next step is wiring the local LLM tool-calling endpoint so links and files route automatically.',
-      },
-    ];
-  }
-
-  return [
-    {
-      start: '00:00:00,320',
-      end: '00:00:05,180',
-      text: `已完成对「${fileName}」的云端 T4 语音识别，当前使用模型为 ${WHISPER_PRESETS_BY_LANG.zh[preset].modelName}。`,
-    },
-    {
-      start: '00:00:05,450',
-      end: '00:00:11,920',
-      text: '今天主要确认桌面端工具箱的整体结构：左侧保留 AI 助手和独立手动工作台，方便不同场景一键切换。',
-    },
-    {
-      start: '00:00:12,300',
-      end: '00:00:18,760',
-      text: '视频文件拖入后自动抽离 16kHz 音轨，再提交给 Colab 或 Kaggle 的 T4 实例执行 faster-whisper 推理。',
-    },
-    {
-      start: '00:00:19,100',
-      end: '00:00:25,400',
-      text: '后续接入本地大模型接口并内嵌原生 TDM 下载器后，整套流程即可作为日常主力桌面软件使用。',
-    },
-  ];
-}
-
-export function formatTranscriptExport(
-  segments: TranscriptSegment[],
-  format: TranscriptOutputFormat,
-  title?: string
-): string {
-  if (format === 'srt') {
-    return segments
-      .map((seg, idx) => `${idx + 1}\n${seg.start} --> ${seg.end}\n${seg.text}`)
-      .join('\n\n');
-  }
-  if (format === 'md_plain') {
-    const heading = title ? `# ${title.replace(/\.[^.]+$/, '')}\n\n` : '';
-    return `${heading}${segments.map((seg) => seg.text).join('\n\n')}`;
-  }
-  return segments.map((seg) => seg.text).join('\n');
-}
-
-export function getTranscriptFileExtension(format: TranscriptOutputFormat): string {
-  if (format === 'md_plain') return 'md';
-  return format;
-}
-
 export function triggerClientBlobDownload(fileName: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -630,14 +553,12 @@ export const API_PROTOCOL_SNIPPETS = {
   "messages": [{ "role": "user", "content": "帮我下这个 https://example.com/demo.mp4" }],
   "tools": ["send_to_tdm", "cloud_transcribe", "convert_document"]
 }`,
-  transcribe: `POST {colabOrKaggleBridgeUrl}
+  transcribe: `// Embedded Cloud Whisper Studio local FastAPI endpoint
+POST http://127.0.0.1:8788/api/transcribe
 Content-Type: multipart/form-data
 {
   "file": "<audio_or_video_binary>",
-  "auto_extract_audio": true,
-  "provider": "colab-t4 | kaggle-t4",
-  "model": "small | medium | large-v3",
-  "output_format": "srt | md_plain | txt"
+  "language": "auto | zh | en | ja | ko"
 }`,
   tdmCapture: `// 原生 Chrome 插件（TDM Fast v4.7.3）直连本机 TDM 服务
 POST http://127.0.0.1:37651/capture

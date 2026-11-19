@@ -1,11 +1,13 @@
-const { app, BrowserWindow, dialog, ipcMain, screen, shell, Menu } = require('electron');
+const { app, BrowserWindow, clipboard, dialog, ipcMain, screen, shell, Menu } = require('electron');
 const path = require('node:path');
 const { startLocalEngine } = require('./localEngine.cjs');
 const { createTdmDockManager } = require('./tdmDockManager.cjs');
+const { createWhisperManager } = require('./whisperManager.cjs');
 
 let mainWindow = null;
 let localEngine = null;
 let tdmDockManager = null;
+let whisperManager = null;
 let isQuitting = false;
 
 const gotLock = app.requestSingleInstanceLock();
@@ -99,8 +101,44 @@ function registerTdmIpcHandlers() {
   );
 }
 
+function registerWhisperIpcHandlers() {
+  ipcMain.handle('whisper:status', () =>
+    whisperManager ? whisperManager.getStatus() : { supported: false }
+  );
+  ipcMain.handle('whisper:start', () =>
+    whisperManager ? whisperManager.start() : { ok: false }
+  );
+  ipcMain.handle('whisper:stop', () =>
+    whisperManager ? whisperManager.stop() : { ok: false }
+  );
+  ipcMain.handle('whisper:restart', () =>
+    whisperManager ? whisperManager.restart() : { ok: false }
+  );
+  ipcMain.handle('whisper:pick-dir', () =>
+    whisperManager ? whisperManager.pickDir() : { ok: false, canceled: true }
+  );
+  ipcMain.handle('whisper:save-settings', (_e, patch) =>
+    whisperManager ? whisperManager.saveSettings(patch) : { ok: false }
+  );
+  ipcMain.handle('whisper:save-transcript', (_e, itemId, fmt) =>
+    whisperManager ? whisperManager.saveTranscriptDialog(itemId, fmt) : { ok: false }
+  );
+  ipcMain.handle('whisper:save-kaggle-nb', () =>
+    whisperManager ? whisperManager.saveKaggleNotebookDialog() : { ok: false }
+  );
+  ipcMain.handle('whisper:copy-text', (_e, text) =>
+    whisperManager ? whisperManager.copyText(text) : { ok: false }
+  );
+  ipcMain.handle('whisper:open-standalone', () =>
+    whisperManager ? whisperManager.openStandalone() : { ok: false }
+  );
+  ipcMain.handle('whisper:open-outputs', () =>
+    whisperManager ? whisperManager.openOutputsFolder() : { ok: false }
+  );
+}
+
 app.whenReady().then(() => {
-  // Start Colab/Kaggle compute & GitHub self-updater backend (127.0.0.1:17890)
+  // Start local health & GitHub self-updater backend (127.0.0.1:17890)
   localEngine = startLocalEngine({
     port: 17890,
     isPackaged: app.isPackaged,
@@ -118,6 +156,7 @@ app.whenReady().then(() => {
 
   createWindow();
   registerTdmIpcHandlers();
+  registerWhisperIpcHandlers();
 
   tdmDockManager = createTdmDockManager({
     mainWindow,
@@ -125,6 +164,23 @@ app.whenReady().then(() => {
     screen,
     isPackaged: app.isPackaged,
   });
+
+  whisperManager = createWhisperManager({
+    mainWindow,
+    dialog,
+    shell,
+    clipboard,
+    isPackaged: app.isPackaged,
+  });
+
+  whisperManager
+    .getStatus()
+    .then((st) => {
+      if (st?.settings?.whisper_auto_start && st.projectExists && !st.running) {
+        whisperManager.start().catch(() => {});
+      }
+    })
+    .catch(() => {});
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -136,6 +192,12 @@ app.on('before-quit', async (event) => {
   isQuitting = true;
   event.preventDefault();
 
+  if (whisperManager) {
+    try {
+      await whisperManager.shutdown();
+    } catch {}
+    whisperManager = null;
+  }
   if (tdmDockManager) {
     try {
       await tdmDockManager.shutdown();

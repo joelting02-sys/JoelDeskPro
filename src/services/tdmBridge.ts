@@ -40,33 +40,35 @@ export interface LocalEngineStatus {
 }
 
 declare global {
-  interface Window {
-    joelDesktop?: {
-      isDesktop: boolean;
-      platform: string;
-      tdm: {
-        getStatus: () => Promise<TdmStatus>;
-        pickExe: () => Promise<{ ok: boolean; canceled?: boolean; exePath?: string; status?: TdmStatus }>;
-        saveSettings: (patch: Partial<TdmNativeSettings>) => Promise<{ ok: boolean; status?: TdmStatus }>;
-        attach: (
-          bounds?: TdmBounds,
-          options?: { autoLaunch?: boolean; visible?: boolean }
-        ) => Promise<{ ok: boolean; error?: string; status?: TdmStatus }>;
-        updateBounds: (bounds: TdmBounds) => Promise<{ ok: boolean }>;
-        setVisible: (
-          visible: boolean,
-          bounds?: TdmBounds
-        ) => Promise<{ ok: boolean; error?: string; status?: TdmStatus }>;
-        detach: () => Promise<{ ok: boolean; status?: TdmStatus }>;
-        relaunch: (bounds?: TdmBounds) => Promise<{ ok: boolean; error?: string; status?: TdmStatus }>;
-        sendUrl: (payload: {
-          url: string;
-          filename?: string;
-          referer?: string;
-        }) => Promise<{ ok: boolean; needsExe?: boolean; error?: string }>;
-        onEvent: (listener: (event: TdmEvent) => void) => () => void;
-      };
+  interface JoelDesktopApi {
+    isDesktop: boolean;
+    platform: string;
+    tdm: {
+      getStatus: () => Promise<TdmStatus>;
+      pickExe: () => Promise<{ ok: boolean; canceled?: boolean; exePath?: string; status?: TdmStatus }>;
+      saveSettings: (patch: Partial<TdmNativeSettings>) => Promise<{ ok: boolean; status?: TdmStatus }>;
+      attach: (
+        bounds?: TdmBounds,
+        options?: { autoLaunch?: boolean; visible?: boolean }
+      ) => Promise<{ ok: boolean; error?: string; status?: TdmStatus }>;
+      updateBounds: (bounds: TdmBounds) => Promise<{ ok: boolean }>;
+      setVisible: (
+        visible: boolean,
+        bounds?: TdmBounds
+      ) => Promise<{ ok: boolean; error?: string; status?: TdmStatus }>;
+      detach: () => Promise<{ ok: boolean; status?: TdmStatus }>;
+      relaunch: (bounds?: TdmBounds) => Promise<{ ok: boolean; error?: string; status?: TdmStatus }>;
+      sendUrl: (payload: {
+        url: string;
+        filename?: string;
+        referer?: string;
+      }) => Promise<{ ok: boolean; needsExe?: boolean; error?: string }>;
+      onEvent: (listener: (event: TdmEvent) => void) => () => void;
     };
+  }
+
+  interface Window {
+    joelDesktop?: JoelDesktopApi;
   }
 }
 

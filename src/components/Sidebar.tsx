@@ -19,6 +19,7 @@ interface SidebarProps {
     transcribe: number;
     convert: number;
   };
+  whisperGpuOnline: boolean;
   tdmRunning: boolean;
   hasUpdate: boolean;
   onOpenUpdateModal: () => void;
@@ -31,6 +32,7 @@ export function Sidebar({
   activeView,
   onSelectView,
   activeCounts,
+  whisperGpuOnline,
   tdmRunning,
   hasUpdate,
   onOpenUpdateModal,
@@ -51,6 +53,7 @@ export function Sidebar({
       label: t.views.transcribe,
       icon: AudioWaveform,
       count: activeCounts.transcribe,
+      dot: whisperGpuOnline,
     },
     {
       id: 'download',

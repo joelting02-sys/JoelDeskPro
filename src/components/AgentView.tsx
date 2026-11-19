@@ -77,6 +77,7 @@ export function AgentView({
       size: file.size || 2.4 * 1024 * 1024,
       category: detectFileCategory(file.name),
       extension: getFileExtension(file.name),
+      rawFile: file,
     }));
     setAttachments((prev) => [...prev, ...mapped]);
   };

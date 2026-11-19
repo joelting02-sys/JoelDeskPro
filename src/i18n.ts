@@ -49,6 +49,11 @@ export interface Translations {
     clearedConversions: string;
     videoAudioQueued: string;
     cloudTranscribeQueued: string;
+    whisperDirSelected: (name: string) => string;
+    whisperRestarted: string;
+    whisperOpenedStandalone: string;
+    whisperBackendFailed: string;
+    whisperDropFilePrompt: string;
     tdmDispatched: string;
     tdmDispatchFailed: string;
     tdmMissingExe: string;
@@ -98,69 +103,29 @@ export interface Translations {
     startConvert: string;
   };
   transcribe: {
-    stages: {
-      queued: string;
-      extracting_audio: string;
-      connecting_gpu: string;
-      downloading_model: string;
-      transcribing: string;
-      completed: string;
-    };
-    videoAutoHint: string;
-    audioDirectHint: string;
-    dropPrompt: string;
-    dropHint: string;
-    clearSelected: string;
-    cloudCompute: string;
-    exportFormat: string;
-    srtSubtitle: string;
-    mdPlain: string;
-    language: string;
-    langAuto: string;
-    langZh: string;
-    langEn: string;
-    modelPresets: string;
-    startVideoTranscribe: string;
-    startAudioTranscribe: string;
-    queueTitle: string;
-    itemCount: (n: number) => string;
-    emptyQueue: string;
-    deleteTask: string;
-    previewTitle: string;
-    copy: string;
-    exportExt: (ext: string) => string;
-    selectTaskHint: string;
-    runningOn: (provider: string) => string;
-    stepDone: string;
-    stepRunning: string;
-    stepWaiting: string;
-    mdPreviewHint: string;
-    compute: {
-      connectColab: string;
-      connectKaggle: string;
-      startGpu: string;
-      stopGpu: string;
-      cancelStart: string;
-      retryStart: string;
-      stopping: string;
-      refreshStatus: string;
-      stopOrphan: (count: number) => string;
-      statusOffline: string;
-      statusStarting: string;
-      statusOnline: string;
-      statusStopping: string;
-      statusError: string;
-      autoShutdownLabel: string;
-      manualHint: string;
-      queueProtectedHint: (count: number) => string;
-      idleCountdownHint: (mmss: string) => string;
-      minutesUnit: (m: number) => string;
-      openedColabLogin: string;
-      openedKaggleLogin: string;
-      startingComputeToast: (provider: string, gpu: string) => string;
-      stoppedComputeToast: string;
-      refreshedComputeToast: string;
-    };
+    webOnlyTitle: string;
+    webOnlyDesc: (url: string) => string;
+    retryProbeBtn: string;
+    missingDirTitle: string;
+    missingDirDesc: string;
+    pickDirBtn: string;
+    openSettingsBtn: string;
+    startingTitle: string;
+    startingDesc: string;
+    readyTitle: string;
+    readyDesc: string;
+    startBtn: string;
+    retryStartBtn: string;
+    restartBtn: string;
+    changeDirBtn: string;
+    openStandaloneBtn: string;
+    reloadUiBtn: string;
+    restartServiceBtn: string;
+    statusGpuOnline: (gpu: string) => string;
+    statusServiceOnline: string;
+    statusStarting: string;
+    statusOffline: string;
+    desktopBridgeUnavailable: string;
   };
   download: {
     webOnlyTitle: string;
@@ -220,14 +185,26 @@ export interface Translations {
     testing: string;
     testedOk: string;
     validateEndpoint: string;
-    cloudTitle: string;
-    cloudDesc: string;
-    colabUrl: string;
-    kaggleUrl: string;
-    colabGpuSpec: string;
-    autoShutdownTitle: string;
-    autoShutdownMinutes: string;
-    ffmpegExtract: string;
+    whisperTitle: string;
+    whisperDesc: string;
+    whisperStatusWeb: string;
+    whisperStatusGpuOnline: (gpu: string) => string;
+    whisperStatusRunning: string;
+    whisperStatusStarting: string;
+    whisperStatusReady: string;
+    whisperStatusMissing: string;
+    whisperProjectDir: string;
+    whisperDirPlaceholder: string;
+    whisperPickDirBtn: string;
+    whisperPort: string;
+    whisperBuiltInSettingsTitle: string;
+    whisperBuiltInSettingsDesc: string;
+    whisperAutoStart: string;
+    whisperCloseOnExit: string;
+    whisperOpenDockedBtn: string;
+    whisperRestartBtn: string;
+    whisperOutputsBtn: string;
+    whisperStandaloneBtn: string;
     tdmTitle: string;
     tdmDesc: string;
     tdmStatusWeb: string;
@@ -325,8 +302,13 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       copied: (label) => `Copied ${label}`,
       newChatStarted: 'Started a new conversation',
       clearedConversions: 'Cleared completed conversions',
-      videoAudioQueued: 'Video detected — extracting audio track & queuing transcription',
-      cloudTranscribeQueued: 'Submitted to cloud T4 transcription queue',
+      videoAudioQueued: 'Video sent to Cloud Whisper Studio (auto audio extraction)',
+      cloudTranscribeQueued: 'Audio submitted to Cloud Whisper Studio queue',
+      whisperDirSelected: (name) => `Selected Whisper Studio folder: ${name}`,
+      whisperRestarted: 'Cloud Whisper Studio service restarted',
+      whisperOpenedStandalone: 'Opened Cloud Whisper Studio in standalone window',
+      whisperBackendFailed: 'Could not start or reach Cloud Whisper Studio backend',
+      whisperDropFilePrompt: 'Drop your audio or video file into Cloud Whisper Studio',
       tdmDispatched: 'Sent link to TDM Fast',
       tdmDispatchFailed: 'Could not reach TDM Fast capture port',
       tdmMissingExe: 'Select your local TDM Fast .exe in Downloader or Settings first',
@@ -352,7 +334,7 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
         'Supports audio/video transcription (auto audio extraction) and document conversion',
       welcomeTitle: 'Drop a link or file, and tell me what to do',
       welcomeSubtitle:
-        'Links are cleaned for TDM Fast automatically, media and documents route to the right tool — or switch directly on the left.',
+        'Links are cleaned for TDM Fast automatically, media routes into Cloud Whisper Studio — or switch directly on the left.',
       extractedLink: 'Extracted link',
       detectedLink: 'Detected link',
       copyUrl: 'Copy URL',
@@ -367,80 +349,42 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       downloadDispatch: 'Send to Downloader',
       addedToDownload: 'Sent · Open TDM',
       sendToDownload: 'Download in TDM',
-      cloudTranscribe: 'Cloud Transcription',
+      cloudTranscribe: 'Cloud Whisper Studio',
       videoSourceHint: 'Video · Auto-extract audio',
       audioSourceHint: 'Audio source',
       mdPlainLabel: 'MD Plain',
-      transcribeStarted: 'Started · View Progress',
-      startCloudTranscribe: 'Start Transcription',
+      transcribeStarted: 'Submitted · Open Studio',
+      startCloudTranscribe: 'Send to Whisper Studio',
       docConvert: 'Format Conversion',
       convertStarted: 'Converting · View',
       startConvert: 'Start Conversion',
     },
     transcribe: {
-      stages: {
-        queued: 'Queued',
-        extracting_audio: 'Extracting audio track (16kHz WAV)',
-        connecting_gpu: 'Connecting cloud T4 GPU',
-        downloading_model: 'Loading model weights',
-        transcribing: 'Running faster-whisper inference',
-        completed: 'Completed',
-      },
-      videoAutoHint: 'Video detected · 16kHz audio track will be extracted automatically',
-      audioDirectHint: 'Audio detected · Ready for direct cloud T4 transcription',
-      dropPrompt: 'Drop an audio or video file here, or click to browse',
-      dropHint: 'Auto-detects media format · Extracts audio from video (MP4 / MKV / MOV / MP3 / WAV / M4A)',
-      clearSelected: 'Clear',
-      cloudCompute: 'Cloud Compute Node',
-      exportFormat: 'Export Format',
-      srtSubtitle: 'SRT Subtitles',
-      mdPlain: 'MD Plain',
-      language: 'Language',
-      langAuto: 'Auto',
-      langZh: 'Chinese',
-      langEn: 'English',
-      modelPresets: 'faster-whisper Model Tier',
-      startVideoTranscribe: 'Extract Audio & Transcribe',
-      startAudioTranscribe: 'Start Cloud Transcription',
-      queueTitle: 'Transcription Queue',
-      itemCount: (n) => `${n} ${n === 1 ? 'item' : 'items'}`,
-      emptyQueue: 'No transcription tasks yet. Drop an audio or video file above to begin.',
-      deleteTask: 'Delete task',
-      previewTitle: 'Transcript Preview',
-      copy: 'Copy',
-      exportExt: (ext) => `Export .${ext}`,
-      selectTaskHint: 'Select a task on the left to inspect progress or transcript output.',
-      runningOn: (provider) => `Running on ${provider} with`,
-      stepDone: 'Done',
-      stepRunning: 'Running',
-      stepWaiting: 'Pending',
-      mdPreviewHint: 'Timestamp-free Markdown preview · Clean paragraph export',
-      compute: {
-        connectColab: 'Connect Colab',
-        connectKaggle: 'Connect Kaggle',
-        startGpu: 'Start GPU',
-        stopGpu: 'Stop GPU',
-        cancelStart: 'Cancel',
-        retryStart: 'Retry',
-        stopping: 'Stopping…',
-        refreshStatus: 'Refresh status',
-        stopOrphan: (count) => `Stop Residual (${count})`,
-        statusOffline: 'Offline',
-        statusStarting: 'Starting…',
-        statusOnline: 'Online',
-        statusStopping: 'Stopping…',
-        statusError: 'Error',
-        autoShutdownLabel: 'Auto-shutdown when idle',
-        manualHint: 'Manual mode · stays online',
-        queueProtectedHint: (count) => `${count} active · shuts down after queue finishes`,
-        idleCountdownHint: (mmss) => `Queue empty · auto-off in ${mmss}`,
-        minutesUnit: (m) => `${m}m`,
-        openedColabLogin: 'Opened Google Colab sign-in in browser',
-        openedKaggleLogin: 'Opened Kaggle sign-in in browser',
-        startingComputeToast: (provider, gpu) => `Starting ${provider} (${gpu})…`,
-        stoppedComputeToast: 'Cloud GPU stopped & runtime cleared',
-        refreshedComputeToast: 'Compute status refreshed',
-      },
+      webOnlyTitle: 'Cloud Whisper Studio Not Detected',
+      webOnlyDesc: (url) =>
+        `Launch Cloud Whisper Studio locally at ${url} or use the Joel Desk Pro Windows desktop app (.exe) to auto-start and embed it directly here.`,
+      retryProbeBtn: 'Retry Connection',
+      missingDirTitle: 'Locate Cloud Whisper Studio Folder',
+      missingDirDesc:
+        'Select your local cloud-whisper-studio project folder once. After that, Joel Desk Pro automatically starts and embeds your Colab / Kaggle transcription studio here.',
+      pickDirBtn: 'Select Project Folder',
+      openSettingsBtn: 'Open Settings',
+      startingTitle: 'Starting Cloud Whisper Studio…',
+      startingDesc: 'Launching local FastAPI + ffmpeg backend and loading your GPU workspace.',
+      readyTitle: 'Cloud Whisper Studio Stopped',
+      readyDesc: 'Click below to launch and embed Cloud Whisper Studio in this workspace.',
+      startBtn: 'Start Whisper Studio',
+      retryStartBtn: 'Retry Start',
+      restartBtn: 'Restart Service',
+      changeDirBtn: 'Change Folder',
+      openStandaloneBtn: 'Pop Out Standalone',
+      reloadUiBtn: 'Refresh UI',
+      restartServiceBtn: 'Restart Service',
+      statusGpuOnline: (gpu) => `GPU Ready · ${gpu}`,
+      statusServiceOnline: 'Service Online',
+      statusStarting: 'Starting…',
+      statusOffline: 'Stopped',
+      desktopBridgeUnavailable: 'Desktop save dialog is only available in Joel Desk Pro desktop app',
     },
     download: {
       webOnlyTitle: 'Windows Desktop Only',
@@ -505,15 +449,28 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       testing: 'Validating…',
       testedOk: 'Endpoint format valid',
       validateEndpoint: 'Validate Format',
-      cloudTitle: 'Cloud GPU & Audio Preprocessing',
-      cloudDesc:
-        'Connect your Google Colab or Kaggle faster-whisper T4 tunnel URL',
-      colabUrl: 'Google Colab T4 Bridge URL',
-      kaggleUrl: 'Kaggle T4 x2 Bridge URL',
-      colabGpuSpec: 'Colab GPU Tier',
-      autoShutdownTitle: 'Auto-shutdown GPU when idle (synced with outer checkbox)',
-      autoShutdownMinutes: 'Idle timeout',
-      ffmpegExtract: 'Automatically extract 16kHz audio via local FFmpeg before cloud upload',
+      whisperTitle: 'Cloud Whisper Studio Integration',
+      whisperDesc:
+        'Automatically launch and embed your local Cloud Whisper Studio inside the Transcription workbench with native Save As support',
+      whisperStatusWeb: 'Desktop App Only',
+      whisperStatusGpuOnline: (gpu) => `GPU Online · ${gpu}`,
+      whisperStatusRunning: 'Running · Embedded',
+      whisperStatusStarting: 'Starting…',
+      whisperStatusReady: 'Folder Located',
+      whisperStatusMissing: 'Folder Not Found',
+      whisperProjectDir: 'Local Cloud Whisper Studio Folder',
+      whisperDirPlaceholder: 'Select folder containing backend/main.py',
+      whisperPickDirBtn: 'Browse Folder',
+      whisperPort: 'Local Service Port',
+      whisperBuiltInSettingsTitle: 'Colab / Kaggle & Model Settings',
+      whisperBuiltInSettingsDesc:
+        'Configure Colab GPU tier, Kaggle credentials, Whisper model, and idle auto-shutdown directly inside Cloud Whisper Studio ⚙ Settings.',
+      whisperAutoStart: 'Auto-start Cloud Whisper Studio backend when launching Joel Desk Pro',
+      whisperCloseOnExit: 'Stop managed Cloud Whisper Studio backend when quitting Joel Desk Pro',
+      whisperOpenDockedBtn: 'Open Transcription Workbench',
+      whisperRestartBtn: 'Restart Backend',
+      whisperOutputsBtn: 'Open Outputs Folder',
+      whisperStandaloneBtn: 'Launch Standalone',
       tdmTitle: 'TDM Fast Downloader Integration',
       tdmDesc:
         'Dock your local TDM Fast window directly inside Downloader while keeping the native Chrome TDM extension running intact',
@@ -549,7 +506,7 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       copy: 'Copy',
       protocols: {
         llm: 'LLM Intent Router (OpenAI-compatible)',
-        transcribe: 'Cloud T4 Transcription',
+        transcribe: 'Cloud Whisper Studio (/api/transcribe)',
         tdmCapture: 'TDM Native Capture Endpoint',
         convert: 'Document Format Conversion',
       },
@@ -616,8 +573,13 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       copied: (label) => `已复制${label}`,
       newChatStarted: '已开启新对话',
       clearedConversions: '已清理已完成的转换记录',
-      videoAudioQueued: '已识别视频，开始自动抽离音轨并转录',
-      cloudTranscribeQueued: '已提交至云端 T4 转录队列',
+      videoAudioQueued: '已送入 Cloud Whisper Studio（将自动抽离音轨并转录）',
+      cloudTranscribeQueued: '已送入 Cloud Whisper Studio 转录队列',
+      whisperDirSelected: (name) => `已选定 Cloud Whisper Studio 目录：${name}`,
+      whisperRestarted: '已重启 Cloud Whisper Studio 后端服务',
+      whisperOpenedStandalone: '已在独立窗口打开 Cloud Whisper Studio',
+      whisperBackendFailed: '无法启动或连接 Cloud Whisper Studio 后端服务',
+      whisperDropFilePrompt: '请将音视频直接拖入下方的 Cloud Whisper Studio 上传区',
       tdmDispatched: '已将链接发送给 TDM Fast',
       tdmDispatchFailed: '无法连接 TDM Fast 接收端口，请确认已启动',
       tdmMissingExe: '请先在「高速下载」或「模型与接口」中选择本机 TDM Fast 程序路径',
@@ -639,10 +601,10 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
     },
     agent: {
       dropTitle: '松开文件，交给 AI 自动识别',
-      dropSubtitle: '支持音视频转录（视频自动提取音轨）及 PDF / Word 文档转换',
+      dropSubtitle: '支持音视频转录（送入 Cloud Whisper Studio）及 PDF / Word 文档转换',
       welcomeTitle: '丢入链接、文件，直接说你想做什么',
       welcomeSubtitle:
-        'AI 助手会自动清洗链接发给 TDM Fast、识别音视频或文档并调用工具；也可在左侧直达工作台。',
+        'AI 助手会自动清洗链接发给 TDM Fast、把音视频直接送入 Cloud Whisper Studio 转录；也可在左侧直达工作台。',
       extractedLink: '已精准提取链接',
       detectedLink: '已识别链接',
       copyUrl: '复制纯链',
@@ -657,80 +619,42 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       downloadDispatch: '高速下载调度',
       addedToDownload: '已发送 · 打开 TDM',
       sendToDownload: '发送到 TDM 下载',
-      cloudTranscribe: '云端语音转录',
+      cloudTranscribe: 'Cloud Whisper Studio 转录',
       videoSourceHint: '视频源 · 将自动提取音轨',
       audioSourceHint: '音频源',
       mdPlainLabel: 'MD 无时间轴',
-      transcribeStarted: '已启动转录 · 查看进度',
-      startCloudTranscribe: '启动云端转录',
+      transcribeStarted: '已送入 · 打开转录台',
+      startCloudTranscribe: '送入 Whisper Studio 转录',
       docConvert: '文档格式转换',
       convertStarted: '已开始转换 · 查看',
       startConvert: '开始转换',
     },
     transcribe: {
-      stages: {
-        queued: '排队中',
-        extracting_audio: '自动提取音轨 (16kHz WAV)',
-        connecting_gpu: '连接云端 T4 GPU',
-        downloading_model: '云端拉取模型权重',
-        transcribing: 'faster-whisper 推理中',
-        completed: '已完成',
-      },
-      videoAutoHint: '已自动识别为视频 · 转录前将自动抽离 16kHz 音频轨道',
-      audioDirectHint: '已自动识别为音频 · 直接送入云端 T4 转录',
-      dropPrompt: '拖入音频或视频文件，或点击选择',
-      dropHint: '自动识别媒体格式 · 视频自动转音频提取音轨（MP4 / MKV / MOV / MP3 / WAV / M4A）',
-      clearSelected: '清除已选',
-      cloudCompute: '云端算力节点',
-      exportFormat: '导出格式',
-      srtSubtitle: 'SRT 字幕',
-      mdPlain: 'MD 无时间轴',
-      language: '语言',
-      langAuto: '自动',
-      langZh: '中文',
-      langEn: 'English',
-      modelPresets: 'faster-whisper 模型档位',
-      startVideoTranscribe: '自动提取音轨并开始转录',
-      startAudioTranscribe: '开始云端转录',
-      queueTitle: '转录队列',
-      itemCount: (n) => `${n} 项`,
-      emptyQueue: '暂无转录记录，拖入音视频即可开始',
-      deleteTask: '删除任务',
-      previewTitle: '转录文稿预览',
-      copy: '复制',
-      exportExt: (ext) => `导出 .${ext}`,
-      selectTaskHint: '选择左侧任务查看转录进度与结果',
-      runningOn: (provider) => `正在通过 ${provider} 运行`,
-      stepDone: '完成',
-      stepRunning: '执行中',
-      stepWaiting: '等待中',
-      mdPreviewHint: '无时间轴 Markdown 预览 · 导出为纯净分段文档',
-      compute: {
-        connectColab: '连接 Colab',
-        connectKaggle: '连接 Kaggle',
-        startGpu: '启动算力',
-        stopGpu: '关闭算力',
-        cancelStart: '取消启动',
-        retryStart: '重新启动',
-        stopping: '正在关机…',
-        refreshStatus: '刷新状态',
-        stopOrphan: (count) => `关闭残留实例 (${count})`,
-        statusOffline: '已关机',
-        statusStarting: '启动中…',
-        statusOnline: '绿灯就绪',
-        statusStopping: '正在关机…',
-        statusError: '启动异常',
-        autoShutdownLabel: '闲置自动关机',
-        manualHint: '手动模式 · 不会自动关机',
-        queueProtectedHint: (count) => `处理中 ${count} 个任务 · 全部转完才自动关机`,
-        idleCountdownHint: (mmss) => `队列已空 · ${mmss} 后自动关机`,
-        minutesUnit: (m) => `${m} 分钟`,
-        openedColabLogin: '已在浏览器打开 Google Colab 登录页',
-        openedKaggleLogin: '已在浏览器打开 Kaggle 登录页',
-        startingComputeToast: (provider, gpu) => `正在启动 ${provider} (${gpu})…`,
-        stoppedComputeToast: '云端算力已关闭并清理实例',
-        refreshedComputeToast: '已刷新算力状态',
-      },
+      webOnlyTitle: '未检测到 Cloud Whisper Studio 本地服务',
+      webOnlyDesc: (url) =>
+        `请在本机运行 Cloud Whisper Studio（${url}），或启动 Windows 桌面版 Joel Desk Pro (.exe) 以自动拉起并无缝内嵌完整界面。`,
+      retryProbeBtn: '重新检测连接',
+      missingDirTitle: '定位 Cloud Whisper Studio 项目目录',
+      missingDirDesc:
+        '选择一次电脑上的 cloud-whisper-studio 工程文件夹后，点击「语音转录」会自动无黑框启动并在当前区域无缝运行 Colab / Kaggle 云端听写。',
+      pickDirBtn: '浏览选择项目目录',
+      openSettingsBtn: '打开设置',
+      startingTitle: '正在启动 Cloud Whisper Studio…',
+      startingDesc: '正在后台拉起 FastAPI 听写服务与 ffmpeg 音频瘦身管道，马上就绪。',
+      readyTitle: 'Cloud Whisper Studio 未运行',
+      readyDesc: '点击下方按钮立即启动并内嵌到当前语音转录工作区。',
+      startBtn: '启动 Whisper Studio',
+      retryStartBtn: '重试启动',
+      restartBtn: '重启服务',
+      changeDirBtn: '更换目录',
+      openStandaloneBtn: '独立窗口打开',
+      reloadUiBtn: '刷新界面',
+      restartServiceBtn: '重启服务',
+      statusGpuOnline: (gpu) => `绿灯就绪 · ${gpu}`,
+      statusServiceOnline: '服务在线',
+      statusStarting: '启动中…',
+      statusOffline: '未启动',
+      desktopBridgeUnavailable: '仅桌面版客户端支持调用系统原生保存弹窗',
     },
     download: {
       webOnlyTitle: '仅 Windows 桌面客户端可用',
@@ -793,14 +717,28 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       testing: '检测中…',
       testedOk: '接口格式校验通过',
       validateEndpoint: '校验端点格式',
-      cloudTitle: '云端算力与音轨预处理',
-      cloudDesc: '对接你在 Google Colab / Kaggle 上运行的 faster-whisper T4 服务隧道地址',
-      colabUrl: 'Google Colab T4 Bridge URL',
-      kaggleUrl: 'Kaggle T4 x2 Bridge URL',
-      colabGpuSpec: 'Colab GPU 规格',
-      autoShutdownTitle: '闲置自动关机（与外部勾选项双向同步）',
-      autoShutdownMinutes: '静置超时',
-      ffmpegExtract: '拖入视频时自动调用本地 FFmpeg 提取 16kHz 音频后再上传云端',
+      whisperTitle: 'Cloud Whisper Studio 转录集成',
+      whisperDesc:
+        '自动托管并无缝内嵌本机 Cloud Whisper Studio，复用真实 Colab / Kaggle GPU 与系统原生另存为保存弹窗',
+      whisperStatusWeb: '仅桌面版可用',
+      whisperStatusGpuOnline: (gpu) => `绿灯就绪 · ${gpu}`,
+      whisperStatusRunning: '运行中 · 已内嵌',
+      whisperStatusStarting: '启动中…',
+      whisperStatusReady: '已定位目录',
+      whisperStatusMissing: '未定位目录',
+      whisperProjectDir: '本机 Cloud Whisper Studio 项目目录',
+      whisperDirPlaceholder: '请选择包含 backend/main.py 的工程目录',
+      whisperPickDirBtn: '浏览选择目录',
+      whisperPort: '本地监听端口',
+      whisperBuiltInSettingsTitle: '算力与模型详细设置',
+      whisperBuiltInSettingsDesc:
+        'Colab GPU 规格、Kaggle 凭据（kaggle.json）、Whisper 模型及闲置自动关机开关直接在「语音转录」右上角 ⚙ 设置中管理。',
+      whisperAutoStart: '启动 Joel Desk Pro 时自动拉起 Cloud Whisper Studio 后端',
+      whisperCloseOnExit: '关闭 Joel Desk Pro 时同时停止其托管的后端进程',
+      whisperOpenDockedBtn: '前往语音转录',
+      whisperRestartBtn: '重启后端服务',
+      whisperOutputsBtn: '打开输出目录',
+      whisperStandaloneBtn: '独立窗口运行',
       tdmTitle: 'TDM Fast 下载器集成',
       tdmDesc: '将本机 TDM Fast 界面直接贴合进「高速下载」，Chrome 继续直接使用原版 TDM Fast 插件',
       tdmStatusWeb: '仅桌面版可用',
@@ -835,7 +773,7 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       copy: '复制',
       protocols: {
         llm: '大模型意图路由 (OpenAI 兼容)',
-        transcribe: '云端 T4 语音转录',
+        transcribe: 'Cloud Whisper Studio (/api/transcribe)',
         tdmCapture: 'TDM 原生任务接收端口',
         convert: '文档格式转换',
       },

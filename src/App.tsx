@@ -11,26 +11,15 @@ import {
   AgentActionPayload,
   AgentMessage,
   AttachedFileItem,
-  ColabGpuSpec,
-  ComputeProvider,
-  ComputeRuntimeState,
   ConversionTask,
   DocumentFormat,
   EndpointConfig,
-  IdleShutdownMinutes,
-  MediaKind,
   ToastNotice,
-  TranscriptLanguage,
-  TranscriptOutputFormat,
-  TranscriptionStage,
-  TranscriptionTask,
-  WhisperPresetId,
   WorkspaceView,
 } from './types/toolkit';
 import {
   DEFAULT_ENDPOINT_CONFIG,
   detectDocumentFormat,
-  generateSimulatedTranscript,
   nowTimeLabel,
   parseAgentIntent,
 } from './services/toolkitAdapter';
@@ -42,22 +31,18 @@ import {
   probeLocalEngine,
 } from './services/tdmBridge';
 import {
+  INITIAL_WHISPER_STATUS,
+  WhisperStatus,
+  dispatchFileToWhisper,
+  isDesktopWhisperSupported,
+} from './services/whisperBridge';
+import {
   GitHubUpdateInfo,
   LocalUpdateResult,
   checkGitHubUpdate,
   setSyncedCommitSha,
   triggerLocalClientUpdate,
 } from './services/githubUpdater';
-import {
-  INITIAL_COMPUTE_STATE,
-  fetchLocalComputeState,
-  getComputeBrowserAuthUrl,
-  openExternalTab,
-  refreshLocalCompute,
-  startLocalCompute,
-  stopLocalCompute,
-  syncLocalComputeSettings,
-} from './services/computeBridge';
 import { AppLanguage, TRANSLATIONS, getInitialLanguage, saveLanguage } from './i18n';
 
 export default function App() {
@@ -67,7 +52,6 @@ export default function App() {
 
   const [config, setConfig] = useState<EndpointConfig>(DEFAULT_ENDPOINT_CONFIG);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
-  const [transcriptions, setTranscriptions] = useState<TranscriptionTask[]>([]);
   const [conversions, setConversions] = useState<ConversionTask[]>([]);
   const [localEngineOnline, setLocalEngineOnline] = useState(false);
   const [localEnginePackaged, setLocalEnginePackaged] = useState(false);
@@ -77,13 +61,19 @@ export default function App() {
   }));
   const [tdmHiddenByUser, setTdmHiddenByUser] = useState(false);
 
+  const [whisperStatus, setWhisperStatus] = useState<WhisperStatus>(() => ({
+    ...INITIAL_WHISPER_STATUS,
+    supported: isDesktopWhisperSupported(),
+  }));
+  const [whisperVisited, setWhisperVisited] = useState(false);
+  const [whisperReloadNonce, setWhisperReloadNonce] = useState(0);
+
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<GitHubUpdateInfo | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [updatingLocal, setUpdatingLocal] = useState(false);
   const [localUpdateResult, setLocalUpdateResult] = useState<LocalUpdateResult | null>(null);
-  const [computeState, setComputeState] = useState<ComputeRuntimeState>(INITIAL_COMPUTE_STATE);
   const [toast, setToast] = useState<ToastNotice | null>(null);
 
   const langRef = useRef<AppLanguage>(lang);
@@ -91,6 +81,7 @@ export default function App() {
   const activeViewRef = useRef<WorkspaceView>(activeView);
   activeViewRef.current = activeView;
   const lastDownloadBoundsRef = useRef<TdmBounds | undefined>(undefined);
+  const whisperIframeRef = useRef<HTMLIFrameElement>(null);
 
   const t = TRANSLATIONS[lang];
 
@@ -103,6 +94,12 @@ export default function App() {
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
     document.title = TRANSLATIONS[lang].documentTitle;
   }, [lang]);
+
+  useEffect(() => {
+    if (activeView === 'transcribe') {
+      setWhisperVisited(true);
+    }
+  }, [activeView]);
 
   const showToast = useCallback((message: string, tone: ToastNotice['tone'] = 'neutral') => {
     const id = `${Date.now()}`;
@@ -164,6 +161,41 @@ export default function App() {
       off();
     };
   }, [showToast]);
+
+  // Sync Cloud Whisper Studio backend status & events
+  useEffect(() => {
+    const whisperApi = window.joelDesktop?.whisper;
+    if (!whisperApi || !isDesktopWhisperSupported()) return;
+
+    let mounted = true;
+    const applyWhisperStatus = (st: WhisperStatus) => {
+      setWhisperStatus(st);
+      if (st.settings) {
+        setConfig((prev) => ({
+          ...prev,
+          whisperProjectDir: st.settings!.whisper_project_dir ?? prev.whisperProjectDir,
+          whisperPort: st.settings!.whisper_port ?? prev.whisperPort,
+          whisperAutoStart: st.settings!.whisper_auto_start ?? prev.whisperAutoStart,
+          whisperCloseOnExit: st.settings!.whisper_close_on_exit ?? prev.whisperCloseOnExit,
+        }));
+      }
+    };
+
+    whisperApi.getStatus().then((st) => {
+      if (!mounted || !st) return;
+      applyWhisperStatus(st);
+    });
+
+    const off = whisperApi.onEvent((evt) => {
+      if (!mounted || !evt) return;
+      if (evt.status) applyWhisperStatus(evt.status);
+    });
+
+    return () => {
+      mounted = false;
+      off();
+    };
+  }, []);
 
   // Ensure TDM hides immediately when navigating away from Downloader or opening overlays
   useEffect(() => {
@@ -238,42 +270,67 @@ export default function App() {
     if (res?.status) setTdmStatus(res.status);
   }, []);
 
-  // Live progress loop for active transcriptions & conversions
+  // Cloud Whisper Studio handlers
+  const handleStartWhisper = useCallback(async () => {
+    const whisperApi = window.joelDesktop?.whisper;
+    if (!whisperApi) return;
+    setWhisperStatus((prev) => ({ ...prev, starting: true, lastError: '' }));
+    const res = await whisperApi.start();
+    if (res?.status) setWhisperStatus(res.status);
+    if (res && !res.ok && res.error) {
+      showToast(res.error, 'warning');
+    }
+  }, [showToast]);
+
+  const handleRestartWhisper = useCallback(async () => {
+    const whisperApi = window.joelDesktop?.whisper;
+    if (!whisperApi) return;
+    setWhisperStatus((prev) => ({ ...prev, starting: true, lastError: '' }));
+    const res = await whisperApi.restart();
+    if (res?.status) setWhisperStatus(res.status);
+    if (res?.ok) {
+      setWhisperReloadNonce((n) => n + 1);
+      showToast(TRANSLATIONS[langRef.current].toasts.whisperRestarted, 'success');
+    } else if (res?.error) {
+      showToast(res.error, 'warning');
+    }
+  }, [showToast]);
+
+  const handlePickWhisperDir = useCallback(async () => {
+    const whisperApi = window.joelDesktop?.whisper;
+    if (!whisperApi) return;
+    const res = await whisperApi.pickDir();
+    if (res?.status) setWhisperStatus(res.status);
+    if (res?.ok && res.projectDir) {
+      setConfig((prev) => ({ ...prev, whisperProjectDir: res.projectDir! }));
+      const base = res.projectDir.split(/[\\/]/).pop() || res.projectDir;
+      showToast(TRANSLATIONS[langRef.current].toasts.whisperDirSelected(base), 'success');
+    } else if (res && !res.canceled && res.error) {
+      showToast(res.error, 'warning');
+    }
+  }, [showToast]);
+
+  const handleOpenWhisperStandalone = useCallback(async () => {
+    const whisperApi = window.joelDesktop?.whisper;
+    if (!whisperApi) return;
+    const res = await whisperApi.openStandalone();
+    if (res?.ok) {
+      showToast(TRANSLATIONS[langRef.current].toasts.whisperOpenedStandalone, 'neutral');
+    }
+  }, [showToast]);
+
+  const handleOpenWhisperOutputs = useCallback(async () => {
+    const whisperApi = window.joelDesktop?.whisper;
+    if (!whisperApi) return;
+    const res = await whisperApi.openOutputs();
+    if (res && !res.ok && res.error) {
+      showToast(res.error, 'warning');
+    }
+  }, [showToast]);
+
+  // Live progress loop for active conversions
   useEffect(() => {
     const timer = window.setInterval(() => {
-      setTranscriptions((prev) => {
-        const hasActive = prev.some((item) => item.stage !== 'completed');
-        if (!hasActive) return prev;
-        return prev.map((task) => {
-          if (task.stage === 'completed') return task;
-          const nextProgress = Math.min(100, task.progress + 7);
-          let nextStage: TranscriptionStage = task.stage;
-
-          if (task.needsAudioExtract) {
-            if (nextProgress < 22) nextStage = 'extracting_audio';
-            else if (nextProgress < 42) nextStage = 'connecting_gpu';
-            else if (nextProgress < 65) nextStage = 'downloading_model';
-            else if (nextProgress < 100) nextStage = 'transcribing';
-            else nextStage = 'completed';
-          } else {
-            if (nextProgress < 25) nextStage = 'connecting_gpu';
-            else if (nextProgress < 55) nextStage = 'downloading_model';
-            else if (nextProgress < 100) nextStage = 'transcribing';
-            else nextStage = 'completed';
-          }
-
-          return {
-            ...task,
-            progress: nextProgress,
-            stage: nextStage,
-            segments:
-              nextStage === 'completed'
-                ? generateSimulatedTranscript(task.fileName, task.preset, task.language, langRef.current)
-                : task.segments,
-          };
-        });
-      });
-
       setConversions((prev) => {
         const hasActive = prev.some((c) => c.status === 'converting');
         if (!hasActive) return prev;
@@ -292,43 +349,7 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const createTranscriptionTask = useCallback(
-    (params: {
-      fileName: string;
-      fileSizeBytes: number;
-      mediaKind: MediaKind;
-      provider: ComputeProvider;
-      preset: WhisperPresetId;
-      outputFormat: TranscriptOutputFormat;
-      language: TranscriptLanguage;
-      source: 'agent' | 'manual';
-    }) => {
-      const tr = TRANSLATIONS[langRef.current].toasts;
-      const needsAudioExtract = params.mediaKind === 'video' && config.ffmpegAutoExtract;
-      const task: TranscriptionTask = {
-        id: `tr-${Date.now()}`,
-        fileName: params.fileName,
-        fileSizeBytes: params.fileSizeBytes,
-        mediaKind: params.mediaKind,
-        needsAudioExtract,
-        provider: params.provider,
-        preset: params.preset,
-        outputFormat: params.outputFormat,
-        language: params.language,
-        stage: needsAudioExtract ? 'extracting_audio' : 'connecting_gpu',
-        progress: 6,
-        createdAt: nowTimeLabel(),
-        segments: [],
-        source: params.source,
-      };
-      setTranscriptions((prev) => [task, ...prev]);
-      showToast(needsAudioExtract ? tr.videoAudioQueued : tr.cloudTranscribeQueued, 'success');
-      return task.id;
-    },
-    [config.ffmpegAutoExtract, showToast]
-  );
-
-  // Poll local compute/updater HTTP engine
+  // Poll local updater HTTP engine
   useEffect(() => {
     let cancelled = false;
 
@@ -346,186 +367,6 @@ export default function App() {
       window.clearInterval(timer);
     };
   }, [config.chromeBridgePort]);
-
-  // Poll real local compute runtime state every 2s when local engine is online
-  useEffect(() => {
-    if (!localEngineOnline) {
-      setComputeState((prev) =>
-        prev.status === 'offline' && !prev.errorMessage ? prev : INITIAL_COMPUTE_STATE
-      );
-      return;
-    }
-
-    let cancelled = false;
-    const poll = async () => {
-      const snap = await fetchLocalComputeState(config.chromeBridgePort);
-      if (cancelled || !snap) return;
-      setComputeState(snap.compute);
-      if (snap.settings) {
-        setConfig((prev) => {
-          const nextEnabled = snap.settings?.autoShutdownEnabled ?? prev.autoShutdownEnabled;
-          const nextMinutes = snap.settings?.autoShutdownMinutes ?? prev.autoShutdownMinutes;
-          if (
-            nextEnabled === prev.autoShutdownEnabled &&
-            nextMinutes === prev.autoShutdownMinutes
-          ) {
-            return prev;
-          }
-          return {
-            ...prev,
-            autoShutdownEnabled: nextEnabled,
-            autoShutdownMinutes: nextMinutes,
-          };
-        });
-      }
-    };
-
-    poll();
-    const timer = window.setInterval(poll, 2000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [localEngineOnline, config.chromeBridgePort]);
-
-  const handleConnectCompute = useCallback(
-    async (provider: ComputeProvider, modelName: string) => {
-      const ct = TRANSLATIONS[langRef.current].transcribe.compute;
-      const gpu = provider === 'kaggle-t4' ? 'T4 x2' : config.colabGpuSpec;
-
-      if (!localEngineOnline) {
-        openExternalTab(getComputeBrowserAuthUrl(provider, false, config.chromeBridgePort));
-        showToast(
-          provider === 'kaggle-t4' ? ct.openedKaggleLogin : ct.openedColabLogin,
-          'success'
-        );
-        return;
-      }
-
-      setComputeState((prev) => ({
-        ...prev,
-        status: 'starting',
-        provider,
-        gpu,
-        model: modelName,
-        errorMessage: null,
-      }));
-
-      const res = await startLocalCompute(config.chromeBridgePort, config.chromeBridgeToken, {
-        provider,
-        gpu,
-        model: modelName,
-      });
-
-      if (res.needsAuth) {
-        setComputeState((prev) => ({ ...prev, status: 'offline' }));
-        openExternalTab(
-          res.authUrl || getComputeBrowserAuthUrl(provider, true, config.chromeBridgePort)
-        );
-        showToast(
-          provider === 'kaggle-t4' ? ct.openedKaggleLogin : ct.openedColabLogin,
-          'success'
-        );
-        return;
-      }
-
-      if (res.snapshot) {
-        setComputeState(res.snapshot.compute);
-        showToast(
-          ct.startingComputeToast(provider === 'kaggle-t4' ? 'Kaggle' : 'Colab', gpu),
-          'success'
-        );
-        return;
-      }
-
-      setComputeState((prev) => ({ ...prev, status: 'offline' }));
-      openExternalTab(getComputeBrowserAuthUrl(provider, false, config.chromeBridgePort));
-      showToast(
-        provider === 'kaggle-t4' ? ct.openedKaggleLogin : ct.openedColabLogin,
-        'neutral'
-      );
-    },
-    [
-      config.chromeBridgePort,
-      config.chromeBridgeToken,
-      config.colabGpuSpec,
-      localEngineOnline,
-      showToast,
-    ]
-  );
-
-  const handleStopCompute = useCallback(async () => {
-    const ct = TRANSLATIONS[langRef.current].transcribe.compute;
-    if (!localEngineOnline) {
-      setComputeState(INITIAL_COMPUTE_STATE);
-      return;
-    }
-    setComputeState((prev) => ({ ...prev, status: 'stopping' }));
-    const snap = await stopLocalCompute(config.chromeBridgePort, config.chromeBridgeToken);
-    if (snap) {
-      setComputeState(snap.compute);
-    } else {
-      setComputeState(INITIAL_COMPUTE_STATE);
-    }
-    showToast(ct.stoppedComputeToast, 'neutral');
-  }, [config.chromeBridgePort, config.chromeBridgeToken, localEngineOnline, showToast]);
-
-  const handleRefreshCompute = useCallback(async () => {
-    const ct = TRANSLATIONS[langRef.current].transcribe.compute;
-    const probe = await probeLocalEngine(config.chromeBridgePort);
-    setLocalEngineOnline(probe.online);
-    if (probe.online) {
-      const snap = await refreshLocalCompute(config.chromeBridgePort, config.chromeBridgeToken);
-      if (snap) setComputeState(snap.compute);
-    } else {
-      setComputeState(INITIAL_COMPUTE_STATE);
-    }
-    showToast(ct.refreshedComputeToast, 'neutral');
-  }, [config.chromeBridgePort, config.chromeBridgeToken, showToast]);
-
-  const handleToggleAutoShutdown = useCallback(
-    (enabled: boolean) => {
-      setConfig((prev) => ({ ...prev, autoShutdownEnabled: enabled }));
-      if (localEngineOnline) {
-        syncLocalComputeSettings(config.chromeBridgePort, config.chromeBridgeToken, {
-          auto_shutdown_enabled: enabled,
-          auto_shutdown_minutes: config.autoShutdownMinutes,
-        }).then((snap) => {
-          if (snap) setComputeState(snap.compute);
-        });
-      }
-    },
-    [
-      config.autoShutdownMinutes,
-      config.chromeBridgePort,
-      config.chromeBridgeToken,
-      localEngineOnline,
-    ]
-  );
-
-  const handleChangeAutoShutdownMinutes = useCallback(
-    (minutes: IdleShutdownMinutes) => {
-      setConfig((prev) => ({ ...prev, autoShutdownMinutes: minutes }));
-      if (localEngineOnline) {
-        syncLocalComputeSettings(config.chromeBridgePort, config.chromeBridgeToken, {
-          auto_shutdown_enabled: config.autoShutdownEnabled,
-          auto_shutdown_minutes: minutes,
-        }).then((snap) => {
-          if (snap) setComputeState(snap.compute);
-        });
-      }
-    },
-    [
-      config.autoShutdownEnabled,
-      config.chromeBridgePort,
-      config.chromeBridgeToken,
-      localEngineOnline,
-    ]
-  );
-
-  const handleSelectColabGpu = useCallback((gpu: ColabGpuSpec) => {
-    setConfig((prev) => ({ ...prev, colabGpuSpec: gpu }));
-  }, []);
 
   const handleCheckGitHubUpdate = useCallback(
     async (silent = false) => {
@@ -715,28 +556,85 @@ export default function App() {
       return;
     }
 
-    let taskId = '';
     if (action.type === 'transcribe') {
-      taskId = createTranscriptionTask({
-        fileName: action.fileName,
-        fileSizeBytes: action.fileSizeBytes,
-        mediaKind: action.mediaKind,
-        provider: action.provider,
-        preset: action.preset,
-        outputFormat: action.outputFormat,
-        language: action.language,
-        source: 'agent',
+      const whisperApi = window.joelDesktop?.whisper;
+      let port = whisperStatus.port || config.whisperPort || 8788;
+
+      if (whisperApi && !whisperStatus.running) {
+        const startRes = await whisperApi.start();
+        if (startRes?.status) {
+          setWhisperStatus(startRes.status);
+          port = startRes.status.port || port;
+        }
+        if (!startRes?.ok) {
+          showToast(
+            startRes?.error || TRANSLATIONS[langRef.current].toasts.whisperBackendFailed,
+            'warning'
+          );
+          setActiveView('transcribe');
+          return;
+        }
+      }
+
+      if (!action.rawFile) {
+        setActiveView('transcribe');
+        showToast(TRANSLATIONS[langRef.current].toasts.whisperDropFilePrompt, 'neutral');
+        return;
+      }
+
+      const mappedProvider = action.provider === 'kaggle-t4' ? 'kaggle' : 'colab';
+      const mappedModel =
+        action.preset === 'fast'
+          ? 'small'
+          : action.preset === 'accurate'
+            ? 'large-v3'
+            : 'large-v3-turbo';
+
+      const uploadRes = await dispatchFileToWhisper(port, action.rawFile, {
+        provider: mappedProvider,
+        model: mappedModel,
+        language: action.language || 'auto',
       });
-    } else {
-      taskId = createConversionTask({
-        fileName: action.fileName,
-        fileSizeBytes: action.fileSizeBytes,
-        sourceFormat: action.sourceFormat,
-        targetFormat: action.targetFormat,
-        autoStart: true,
-        source: 'agent',
-      });
+
+      if (!uploadRes.ok) {
+        showToast(
+          uploadRes.error || TRANSLATIONS[langRef.current].toasts.whisperBackendFailed,
+          'warning'
+        );
+        setActiveView('transcribe');
+        return;
+      }
+
+      handleUpdateAgentAction(messageId, (prev) => ({
+        ...prev,
+        dispatchedTaskId: `cw-${Date.now()}`,
+      }));
+      setActiveView('transcribe');
+      window.setTimeout(() => {
+        try {
+          whisperIframeRef.current?.contentWindow?.postMessage(
+            { type: 'cw-parent-cmd', cmd: 'refresh', tab: 'queue' },
+            '*'
+          );
+        } catch {}
+      }, 250);
+      showToast(
+        action.needsAudioExtract
+          ? TRANSLATIONS[langRef.current].toasts.videoAudioQueued
+          : TRANSLATIONS[langRef.current].toasts.cloudTranscribeQueued,
+        'success'
+      );
+      return;
     }
+
+    const taskId = createConversionTask({
+      fileName: action.fileName,
+      fileSizeBytes: action.fileSizeBytes,
+      sourceFormat: action.sourceFormat,
+      targetFormat: action.targetFormat,
+      autoStart: true,
+      source: 'agent',
+    });
 
     handleUpdateAgentAction(messageId, (prev) => ({
       ...prev,
@@ -745,7 +643,7 @@ export default function App() {
   };
 
   const activeCounts = {
-    transcribe: transcriptions.filter((item) => item.stage !== 'completed').length,
+    transcribe: whisperStatus.pendingTasks,
     convert: conversions.filter((item) => item.status === 'converting').length,
   };
 
@@ -764,6 +662,62 @@ export default function App() {
           <Plus className="h-3.5 w-3.5" />
           {t.topbar.newChat}
         </button>
+      );
+    }
+
+    if (activeView === 'transcribe') {
+      const gpuOnline = whisperStatus.running && whisperStatus.computeStatus === 'online';
+      const statusText = gpuOnline
+        ? t.transcribe.statusGpuOnline(whisperStatus.computeGpu || 'GPU')
+        : whisperStatus.running
+          ? t.transcribe.statusServiceOnline
+          : whisperStatus.starting
+            ? t.transcribe.statusStarting
+            : t.transcribe.statusOffline;
+      const statusDot = gpuOnline
+        ? 'bg-[#16A34A]'
+        : whisperStatus.running
+          ? 'bg-[#2563EB]'
+          : whisperStatus.starting
+            ? 'bg-[#D97706]'
+            : 'bg-[#94A3B8]';
+
+      return (
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="inline-flex items-center gap-1.5 rounded-inner bg-[#F3F4F6] px-2.5 py-1 font-mono text-[11px] font-medium text-[#475569]">
+            <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} />
+            {statusText}
+          </span>
+          {whisperStatus.running && (
+            <button
+              type="button"
+              onClick={() => setWhisperReloadNonce((n) => n + 1)}
+              className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#0F172A] hover:border-[#2563EB] hover:text-[#2563EB] whitespace-nowrap shrink-0"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              {t.transcribe.reloadUiBtn}
+            </button>
+          )}
+          {whisperStatus.supported && (
+            <>
+              <button
+                type="button"
+                onClick={handleRestartWhisper}
+                className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:bg-[#F8F9FA] hover:text-[#0F172A] whitespace-nowrap shrink-0"
+              >
+                {t.transcribe.restartServiceBtn}
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenWhisperStandalone}
+                className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:bg-[#F8F9FA] hover:text-[#0F172A] whitespace-nowrap shrink-0"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                {t.transcribe.openStandaloneBtn}
+              </button>
+            </>
+          )}
+        </div>
       );
     }
 
@@ -826,6 +780,8 @@ export default function App() {
     return null;
   };
 
+  const keepTranscribeMounted = whisperVisited || whisperStatus.running;
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#F8F9FA] text-[#0F172A]">
       <Sidebar
@@ -833,6 +789,7 @@ export default function App() {
         activeView={activeView}
         onSelectView={setActiveView}
         activeCounts={activeCounts}
+        whisperGpuOnline={whisperStatus.computeStatus === 'online'}
         tdmRunning={tdmStatus.running}
         hasUpdate={Boolean(updateInfo?.hasUpdate)}
         onOpenUpdateModal={handleOpenUpdateModal}
@@ -907,32 +864,21 @@ export default function App() {
             />
           )}
 
-          {activeView === 'transcribe' && (
-            <TranscribeView
-              lang={lang}
-              tasks={transcriptions}
-              computeState={computeState}
-              colabGpuSpec={config.colabGpuSpec}
-              autoShutdownEnabled={config.autoShutdownEnabled}
-              autoShutdownMinutes={config.autoShutdownMinutes}
-              localEngineOnline={localEngineOnline}
-              onSelectColabGpu={handleSelectColabGpu}
-              onConnectCompute={handleConnectCompute}
-              onStopCompute={handleStopCompute}
-              onRefreshCompute={handleRefreshCompute}
-              onToggleAutoShutdown={handleToggleAutoShutdown}
-              onChangeAutoShutdownMinutes={handleChangeAutoShutdownMinutes}
-              onCreateTask={(params) => createTranscriptionTask({ ...params, source: 'manual' })}
-              onChangeTaskOutputFormat={(id, outputFormat) =>
-                setTranscriptions((prev) =>
-                  prev.map((item) => (item.id === id ? { ...item, outputFormat } : item))
-                )
-              }
-              onDeleteTask={(id) =>
-                setTranscriptions((prev) => prev.filter((item) => item.id !== id))
-              }
-              onCopyText={handleCopyText}
-            />
+          {keepTranscribeMounted && (
+            <div className={activeView === 'transcribe' ? 'h-full' : 'hidden'}>
+              <TranscribeView
+                lang={lang}
+                whisperStatus={whisperStatus}
+                isActive={activeView === 'transcribe'}
+                reloadNonce={whisperReloadNonce}
+                iframeRef={whisperIframeRef}
+                onStart={handleStartWhisper}
+                onRestart={handleRestartWhisper}
+                onPickDir={handlePickWhisperDir}
+                onOpenSettings={() => setActiveView('settings')}
+                onOpenStandalone={handleOpenWhisperStandalone}
+              />
+            </div>
           )}
 
           {activeView === 'download' && (
@@ -988,6 +934,12 @@ export default function App() {
               lang={lang}
               config={config}
               tdmStatus={tdmStatus}
+              whisperStatus={whisperStatus}
+              onPickWhisperDir={handlePickWhisperDir}
+              onOpenWhisperDocked={() => setActiveView('transcribe')}
+              onRestartWhisper={handleRestartWhisper}
+              onOpenWhisperStandalone={handleOpenWhisperStandalone}
+              onOpenWhisperOutputs={handleOpenWhisperOutputs}
               onPickTdmExe={handlePickTdmExe}
               onOpenDownloadDocked={() => {
                 setTdmHiddenByUser(false);
@@ -1009,13 +961,17 @@ export default function App() {
                       if (res?.status) setTdmStatus(res.status);
                     });
                 }
-                if (localEngineOnline) {
-                  syncLocalComputeSettings(next.chromeBridgePort, next.chromeBridgeToken, {
-                    auto_shutdown_enabled: next.autoShutdownEnabled,
-                    auto_shutdown_minutes: next.autoShutdownMinutes,
-                  }).then((snap) => {
-                    if (snap) setComputeState(snap.compute);
-                  });
+                if (window.joelDesktop?.whisper && isDesktopWhisperSupported()) {
+                  window.joelDesktop.whisper
+                    .saveSettings({
+                      whisper_project_dir: next.whisperProjectDir.trim(),
+                      whisper_port: next.whisperPort,
+                      whisper_auto_start: next.whisperAutoStart,
+                      whisper_close_on_exit: next.whisperCloseOnExit,
+                    })
+                    .then((res) => {
+                      if (res?.status) setWhisperStatus(res.status);
+                    });
                 }
                 showToast(t.toasts.configSaved, 'success');
               }}
