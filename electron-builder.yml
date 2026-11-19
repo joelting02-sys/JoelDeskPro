@@ -10,6 +10,8 @@ files:
   - build/icon.png
   - build/icon.ico
   - package.json
+  - '!node_modules/**/*'
+npmRebuild: false
 asar: true
 win:
   target:

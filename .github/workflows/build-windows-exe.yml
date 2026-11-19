@@ -28,13 +28,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
       - name: Install web dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund
 
       - name: Install Electron & electron-builder on Windows runner
-        run: npm install --no-save electron@33 electron-builder@25
+        run: npm install --save-dev --no-audit --no-fund electron@33 electron-builder@25
 
       - name: Generate Black & Gold J Windows icons
         run: node scripts/generate-icons.mjs
@@ -45,6 +44,8 @@ jobs:
         run: npm run build
 
       - name: Package Windows Installer & Portable .exe
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npx electron-builder --win nsis portable --x64 --config electron-builder.yml --publish never
 
       - name: Upload Windows .exe as Workflow Artifacts
