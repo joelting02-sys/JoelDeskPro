@@ -13,6 +13,13 @@ files:
   - '!node_modules/**/*'
 npmRebuild: false
 asar: true
+extraResources:
+  - from: whisper-engine
+    to: whisper-engine
+    filter:
+      - '**/*'
+      - '!**/__pycache__/**'
+      - '!tests/**'
 asarUnpack:
   - electron/tdm-host.cs
   - electron/tdm-host.ps1

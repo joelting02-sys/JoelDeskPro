@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cloud Whisper Studio · 云端显卡极速听写</title>
+  <link rel="icon" type="image/png" href="/static/favicon.png" />
+  <link rel="stylesheet" href="/static/styles.css?v=3" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- 顶部算力遥控栏 -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true">
+          <img src="/static/favicon.png" alt="" width="40" height="40" style="display:block;border-radius:10px;" />
+        </div>
+        <div>
+          <h1 class="brand-title">Cloud Whisper Studio</h1>
+          <p class="brand-sub" id="brandSub">连接你的免费云端显卡 · 拖入视频秒出文字</p>
+        </div>
+      </div>
+
+      <!-- 引擎切换 -->
+      <div class="engine-controls">
+        <div class="segmented" id="providerSwitch" role="group" aria-label="选择云端算力">
+          <button type="button" class="seg-btn active" data-provider="colab">
+            <span class="seg-icon">⚡</span> Colab
+          </button>
+          <button type="button" class="seg-btn" data-provider="kaggle">
+            <span class="seg-icon">🏋️</span> Kaggle
+          </button>
+        </div>
+
+        <select id="languageQuick" class="quick-select" title="识别语言">
+          <option value="auto" data-i18n-opt="langAuto">语言：自动识别</option>
+          <option value="zh" data-i18n-opt="langZh">语言：中文</option>
+          <option value="en" data-i18n-opt="langEn">语言：English</option>
+          <option value="ja" data-i18n-opt="langJa">语言：日语</option>
+          <option value="ko" data-i18n-opt="langKo">语言：韩语</option>
+        </select>
+      </div>
+
+      <!-- 右侧状态灯 + 开关 -->
+      <div class="power-controls">
+        <div class="status-pill status-offline" id="statusPill">
+          <span class="status-dot" id="statusDot"></span>
+          <div class="status-text-wrap">
+            <span class="status-label" id="statusLabel">已关机</span>
+            <span class="status-meta" id="statusMeta">零消耗</span>
+          </div>
+        </div>
+
+        <button type="button" class="btn btn-start" id="powerBtn">
+          <span class="btn-icon">▶</span>
+          <span id="powerBtnText">启动算力</span>
+        </button>
+
+        <button type="button" class="btn btn-icon-only" id="refreshBtn" title="刷新云端连接状态">
+          ↻
+        </button>
+
+        <button type="button" class="btn btn-icon-only" id="settingsBtn" title="算力与模型设置">
+          ⚙
+        </button>
+      </div>
+    </header>
+
+    <!-- 实时状态提示条（启动步骤 / 绿灯倒计时 / 异常提示） -->
+    <section class="status-banner" id="statusBanner">
+      <div class="banner-left">
+        <span class="banner-badge" id="bannerBadge">提示</span>
+        <span class="banner-msg" id="bannerMsg">算力未启动，点击右上角「启动算力」亮绿灯后即可极速听写。</span>
+      </div>
+      <div class="banner-right">
+        <label class="auto-off-toggle" id="autoShutdownToggleWrap" title="勾选：所有文件转完且闲置一段时间后自动关机；不勾选：完全由你手动关闭，不会自动帮你关">
+          <input type="checkbox" id="autoShutdownToggle" />
+          <span id="autoShutdownLabel">闲置自动关机</span>
+        </label>
+        <span class="idle-hint hidden" id="idleHint"></span>
+        <button type="button" class="link-btn hidden" id="toggleLogBtn">查看详情</button>
+        <button type="button" class="link-btn danger hidden" id="orphanStopBtn">关闭残留实例</button>
+      </div>
+    </section>
+
+    <!-- 可折叠启动日志 -->
+    <section class="log-drawer hidden" id="logDrawer">
+      <div class="log-content" id="logContent"></div>
+    </section>
+
+    <!-- 主工作区：左上传队列与历史，右文字稿阅读 -->
+    <main class="workspace">
+      <!-- 左栏 -->
+      <section class="left-col">
+        <!-- 拖拽上传卡片 -->
+        <div class="card drop-card" id="dropZone">
+          <input type="file" id="fileInput" multiple accept="video/*,audio/*,.mp4,.mkv,.mov,.webm,.avi,.mp3,.m4a,.wav,.flac,.ogg,.opus,.aac" hidden />
+          <div class="drop-icon">🎙️</div>
+          <h2 class="drop-title" id="dropTitle">把视频或音频拖到这里</h2>
+          <p class="drop-desc">
+            <span id="dropOrText">或</span> <button type="button" class="inline-pick-btn" id="pickFileBtn">点击选择文件</button><span id="dropMultiText">（支持一次选多个）</span>
+          </p>
+          <div class="drop-tips">
+            <span id="dropTip1">✂️ 自动只留声音瘦身 90%</span>
+            <span id="dropTip2">⚡ 支持 MP4 / MKV / MP3 / M4A / WAV</span>
+          </div>
+        </div>
+
+        <!-- 队列与历史标签页 -->
+        <div class="card list-card">
+          <div class="card-tabs">
+            <button type="button" class="tab-btn active" data-tab="queue">
+              <span id="tabQueueText">当前任务</span> <span class="badge-count" id="queueCount">0</span>
+            </button>
+            <button type="button" class="tab-btn" data-tab="history">
+              <span id="tabHistoryText">历史记录</span> <span class="badge-count" id="historyCount">0</span>
+            </button>
+            <button type="button" class="tab-action-btn" id="openFolderBtn" title="打开自动保存的文件夹">
+              📂 输出目录
+            </button>
+          </div>
+
+          <div class="list-body" id="queueList"></div>
+          <div class="list-body hidden" id="historyList"></div>
+        </div>
+      </section>
+
+      <!-- 右栏：文字稿预览与导出 -->
+      <section class="right-col">
+        <div class="card reader-card">
+          <!-- 空状态：3 步小白上手指南 -->
+          <div class="empty-guide" id="emptyGuide">
+            <div class="guide-badge" id="guideBadge">小白 3 步快速上手</div>
+            <h2 class="guide-heading" id="guideHeading">像用家电遥控器一样，用云端显卡转文字</h2>
+            <div class="guide-steps">
+              <div class="guide-step">
+                <div class="step-num">1</div>
+                <div>
+                  <h3 id="step1Title">点击右上角「启动算力」</h3>
+                  <p id="step1Desc">选 Colab 或 Kaggle，等约 1 分钟顶部亮起 <strong>🟢 绿灯</strong>，说明免费/云端显卡已待命。</p>
+                </div>
+              </div>
+              <div class="guide-step">
+                <div class="step-num">2</div>
+                <div>
+                  <h3 id="step2Title">把视频或音频拖进上传区</h3>
+                  <p id="step2Desc">软件自动去掉画面只留声音，几秒传上云端，几十秒就能在这里看到完整文字稿和字幕。</p>
+                </div>
+              </div>
+              <div class="guide-step">
+                <div class="step-num">3</div>
+                <div>
+                  <h3 id="step3Title">转完点击「关闭算力」</h3>
+                  <p id="step3Desc">一键彻底释放云端显卡，绝不多扣一秒钟额度（也内置了闲置自动关机双保险）。</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 有结果时的阅读器 -->
+          <div class="reader-active hidden" id="readerActive">
+            <div class="reader-header">
+              <div class="reader-title-wrap">
+                <h2 class="reader-title" id="readerTitle">未选择文件</h2>
+                <div class="reader-meta" id="readerMeta"></div>
+              </div>
+              <div class="reader-actions">
+                <button type="button" class="btn btn-subtle" id="copyBtn">📋 复制</button>
+                <button type="button" class="btn btn-subtle" id="dlTxtBtn">⬇️ TXT</button>
+                <button type="button" class="btn btn-subtle" id="dlSrtBtn">⬇️ SRT</button>
+              </div>
+            </div>
+
+            <div class="reader-view-tabs">
+              <button type="button" class="view-pill active" id="viewPlainBtn" data-view="plain">纯文字</button>
+              <button type="button" class="view-pill" id="viewTimelineBtn" data-view="timeline">带时间轴</button>
+              <button type="button" class="view-pill" id="viewSrtBtn" data-view="srt">SRT 字幕源码</button>
+            </div>
+
+            <div class="reader-body" id="readerBody"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 设置弹窗 -->
+  <div class="modal-backdrop hidden" id="settingsModal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="modal-header">
+        <h2 id="settingsTitle">⚙️ 算力连接与听写设置</h2>
+        <button type="button" class="modal-close" id="closeSettingsBtn">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Colab 卡片 -->
+        <div class="setting-section">
+          <div class="section-head">
+            <h3 id="colabSecTitle">⚡ Google Colab 连接</h3>
+            <span class="conn-tag" id="colabConnTag">检测中...</span>
+          </div>
+          <p class="section-hint" id="colabSecHint">自动复用你本机已授权的 <code>colab-t4</code> 官方接口，无需打开浏览器。</p>
+          <div class="form-row">
+            <label for="colabGpuSelect" id="colabGpuLabel">Colab 显卡规格</label>
+            <select id="colabGpuSelect">
+              <option value="T4" data-i18n-opt="gpuT4">Tesla T4（推荐 · 速度快且省额度）</option>
+              <option value="L4" data-i18n-opt="gpuL4">NVIDIA L4（更强算力）</option>
+              <option value="A100" data-i18n-opt="gpuA100">NVIDIA A100（旗舰 · 消耗较高）</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Kaggle 卡片 -->
+        <div class="setting-section">
+          <div class="section-head">
+            <h3 id="kaggleSecTitle">🏋️ Kaggle GPU 连接（每周 30 小时免费）</h3>
+            <span class="conn-tag" id="kaggleConnTag">未配置</span>
+          </div>
+          <p class="section-hint" id="kaggleSecHint">
+            获取方式：登录 <a href="https://www.kaggle.com/settings" target="_blank" rel="noreferrer">kaggle.com/settings</a> → 找到 API → 点击 <strong>Create New Token</strong> 下载 <code>kaggle.json</code>。
+          </p>
+          <div class="kaggle-upload-row">
+            <input type="file" id="kaggleJsonInput" accept=".json" hidden />
+            <button type="button" class="btn btn-subtle" id="uploadKaggleJsonBtn">📄 一键导入 kaggle.json</button>
+            <button type="button" class="btn btn-subtle" id="dlKaggleNbBtn">📓 下载备用 .ipynb</button>
+          </div>
+          <div class="form-grid-2">
+            <div class="form-row">
+              <label for="kaggleUserInput" id="kaggleUserLabel">或手动填写用户名</label>
+              <input type="text" id="kaggleUserInput" placeholder="例如：joel_username" />
+            </div>
+            <div class="form-row">
+              <label for="kaggleKeyInput" id="kaggleKeyLabel">API Key</label>
+              <input type="password" id="kaggleKeyInput" placeholder="粘贴 kaggle.json 里的 key" />
+            </div>
+          </div>
+          <div class="form-inline-end">
+            <button type="button" class="btn btn-primary-sm" id="saveKaggleBtn">验证并保存 Kaggle 凭据</button>
+          </div>
+        </div>
+
+        <!-- 听写与省额度设置 -->
+        <div class="setting-section">
+          <div class="section-head">
+            <h3 id="modelSecTitle">🧠 听写模型与省额度保险</h3>
+          </div>
+          <div class="form-grid-2">
+            <div class="form-row">
+              <label for="modelSelect" id="modelSelectLabel">Whisper 模型</label>
+              <select id="modelSelect">
+                <option value="large-v3-turbo" data-i18n-opt="modelTurbo">large-v3-turbo（极速推荐）</option>
+                <option value="large-v3" data-i18n-opt="modelLarge">large-v3（最高精度）</option>
+                <option value="medium" data-i18n-opt="modelMedium">medium（轻量省显存）</option>
+                <option value="small" data-i18n-opt="modelSmall">small（超快极简）</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label for="autoOffSelect" id="autoOffSelectLabel">闲置自动关机（防忘关扣额度）</label>
+              <select id="autoOffSelect">
+                <option value="10" data-i18n-opt="autoOff10">闲置 10 分钟自动关机</option>
+                <option value="15" data-i18n-opt="autoOff15">闲置 15 分钟自动关机（推荐）</option>
+                <option value="30" data-i18n-opt="autoOff30">闲置 30 分钟自动关机</option>
+                <option value="0" data-i18n-opt="autoOff0">关闭自动关机（仅手动）</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-subtle" id="cancelSettingsBtn">取消</button>
+        <button type="button" class="btn btn-primary" id="saveSettingsBtn">保存设置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 轻提示 Toast -->
+  <div class="toast hidden" id="toast"></div>
+
+  <script src="/static/app.js?v=3"></script>
+</body>
+</html>

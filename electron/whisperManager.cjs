@@ -25,7 +25,20 @@ function isValidWhisperProjectDir(dir) {
   }
 }
 
+// Joel Desk Pro 自带的转录引擎（打包后在 resources/whisper-engine，开发时在仓库根目录）
+function getBuiltinEngineDir() {
+  const candidates = [];
+  if (process.resourcesPath) candidates.push(path.join(process.resourcesPath, 'whisper-engine'));
+  candidates.push(path.join(__dirname, '..', 'whisper-engine'));
+  for (const dir of candidates) {
+    if (isValidWhisperProjectDir(dir)) return dir;
+  }
+  return '';
+}
+
 function autoDetectProjectDir(shell) {
+  const builtin = getBuiltinEngineDir();
+  if (builtin) return builtin;
   const home = os.homedir();
   const candidates = [];
 
@@ -242,6 +255,12 @@ function createWhisperManager(options = {}) {
   };
 
   function syncFlags() {
+    const builtinDir = getBuiltinEngineDir();
+    if (builtinDir && settings.whisper_project_dir !== builtinDir) {
+      // 始终优先使用内置引擎，不再依赖外部独立的 Cloud Whisper Studio
+      settings.whisper_project_dir = builtinDir;
+      mergeSettingsFile({ whisper_project_dir: builtinDir }).catch(() => {});
+    }
     if (!settings.whisper_project_dir || !isValidWhisperProjectDir(settings.whisper_project_dir)) {
       const detected = autoDetectProjectDir(shell);
       if (detected) {
@@ -501,6 +520,11 @@ function createWhisperManager(options = {}) {
           ],
           {
             cwd: state.projectDir,
+            env: {
+              ...process.env,
+              CW_DATA_DIR: path.join(os.homedir(), '.joeldeskpro', 'whisper-data'),
+              PYTHONDONTWRITEBYTECODE: '1',
+            },
             windowsHide: true,
             stdio: ['ignore', 'pipe', 'pipe'],
           }
