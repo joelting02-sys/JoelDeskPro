@@ -79,13 +79,13 @@ function createWindow() {
   });
 }
 
-// JoelFast 5.0.1 — 自有品牌重命名版（发布在用户自己的 GitHub 仓库 joelting02-sys/TDM-Fast）
+// JoelFast 5.0.1 — 自有品牌重命名版（发布在用户自己的 GitHub 仓库 joelting02-sys/JoelFast）
 const TDM_INSTALLER = {
   owner: 'joelting02-sys',
-  repo: 'TDM-Fast',
+  repo: 'JoelFast',
   tag: 'v5.0.1-joel',
   asset: 'JoelFastDownloader_5.0.1_x64.exe',
-  sha256: '8E4E2601A1A4BD78B6F9C9012C44210D4130E298BA431BA5450793BA3934776A',
+  sha256: '6033D73B379ED1905CDC568B731D208567B07D9B84B2E99FBF2166B9F47D67D8',
   size: 6430720,
 };
 

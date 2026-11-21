@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-echo æ­£åœ¨æŠŠ Joel Desk Pro v1.4.4 æ¨é€åˆ° GitHub ...
+echo ÕıÔÚ°Ñ Joel Desk Pro v1.4.5 ÍÆËÍµ½ GitHub ...
 git add -A
-git commit -m "v1.4.4: ä¸‹è½½é¡µæ”¹ç”¨è‡ªæœ‰å“ç‰Œ JoelFastï¼ˆGitHub ä¸‹è½½æŒ‰é’® + ç•Œé¢æ–‡æ¡ˆ + è‡ªåŠ¨è¯†åˆ«ï¼‰"
+git commit -m "v1.4.5: ÏÂÔØÔ´²Ö¿â¸ÄÃû JoelFast£¨GitHub ²Ö¿â joelting02-sys/JoelFast + Ğ£ÑéºÍÍ¬²½£©"
 git push origin main
 echo.
-echo å®Œæˆã€‚GitHub ä¼šè‡ªåŠ¨æ‰“åŒ…æ–°ç‰ˆå®‰è£…åŒ…ï¼ˆçº¦ 5-10 åˆ†é’Ÿï¼‰ã€‚
+echo Íê³É¡£GitHub »á×Ô¶¯´ò°üĞÂ°æ°²×°°ü£¨Ô¼ 5-10 ·ÖÖÓ£©¡£
 pause
