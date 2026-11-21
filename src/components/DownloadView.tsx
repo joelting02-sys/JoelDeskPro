@@ -127,7 +127,7 @@ export function DownloadView({
     onUpdateBounds,
   ]);
 
-  // Hide TDM immediately when leaving DownloadView
+  // Hide JoelFast immediately when leaving DownloadView
   useEffect(() => {
     return () => {
       if (window.joelDesktop?.isDesktop && window.joelDesktop.platform === 'win32') {
@@ -160,7 +160,7 @@ export function DownloadView({
         </div>
       )}
 
-      {/* State 2: Desktop supported, TDM executable missing / unconfigured */}
+      {/* State 2: Desktop supported, JoelFast executable missing / unconfigured */}
       {tdmStatus.supported && !tdmStatus.exeExists && (
         <div className="w-full max-w-[480px] rounded-panel border border-[#E5E7EB] bg-white p-6 shadow-xs">
           <div className="flex items-start gap-3">
@@ -324,7 +324,7 @@ export function DownloadView({
           </div>
         )}
 
-      {/* Subtle underlay behind docked TDM window */}
+      {/* Subtle underlay behind docked JoelFast window */}
       {isDockedAndShowing && (
         <div className="flex flex-col items-center gap-3 text-center select-none">
           <div className="text-[12px] text-[#94A3B8]">{t.dockedUnderlayHint}</div>

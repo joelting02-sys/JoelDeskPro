@@ -79,14 +79,14 @@ function createWindow() {
   });
 }
 
-// TDM Fast 5.0.1 — 本机版本镜像（发布在用户自己的 GitHub 仓库 joelting02-sys/TDM-Fast）
+// JoelFast 5.0.1 — 自有品牌重命名版（发布在用户自己的 GitHub 仓库 joelting02-sys/TDM-Fast）
 const TDM_INSTALLER = {
   owner: 'joelting02-sys',
   repo: 'TDM-Fast',
-  tag: 'v5.0.1',
-  asset: 'TDM_Fast_5.0.1_x64-portable.exe',
-  sha256: '08171D9E43C81422861472668311DD998D18A0539F845FB195EEBFBD7223120A',
-  size: 6478136,
+  tag: 'v5.0.1-joel',
+  asset: 'JoelFastDownloader_5.0.1_x64.exe',
+  sha256: '8E4E2601A1A4BD78B6F9C9012C44210D4130E298BA431BA5450793BA3934776A',
+  size: 6430720,
 };
 
 function downloadHttps(url, destination, redirects = 0) {
@@ -126,7 +126,7 @@ async function downloadTdmInstaller() {
   if (!response.ok) throw new Error(`GitHub release lookup failed (HTTP ${response.status})`);
   const release = await response.json();
   const asset = Array.isArray(release.assets) ? release.assets.find((item) => item.name === TDM_INSTALLER.asset) : null;
-  if (!asset || !Number.isSafeInteger(asset.size) || asset.size <= 0) throw new Error('TDM Fast package not found on GitHub');
+  if (!asset || !Number.isSafeInteger(asset.size) || asset.size <= 0) throw new Error('JoelFast package not found on GitHub');
 
   const destinationDir = path.join(os.homedir(), 'Downloads');
   await fs.mkdir(destinationDir, { recursive: true });

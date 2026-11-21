@@ -14,6 +14,11 @@ function autoDetectTdmExe() {
   const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
 
   const exactCandidates = [
+    path.join(home, 'Desktop', 'JoelFastDownloader_5.0.1_x64.exe'),
+    path.join(home, 'Downloads', 'JoelFastDownloader_5.0.1_x64.exe'),
+    path.join(localAppData, 'Programs', 'JoelFast', 'JoelFastDownloader_5.0.1_x64.exe'),
+    path.join(localAppData, 'JoelFast', 'JoelFastDownloader_5.0.1_x64.exe'),
+    path.join(programFiles, 'JoelFast', 'JoelFastDownloader_5.0.1_x64.exe'),
     path.join(home, 'Desktop', 'TDM Fast.exe'),
     path.join(localAppData, 'Programs', 'TDM Fast', 'TDM Fast.exe'),
     path.join(localAppData, 'TDM Fast', 'TDM Fast.exe'),
@@ -37,17 +42,21 @@ function autoDetectTdmExe() {
     programFilesX86,
   ];
 
+  // 匹配自有品牌（JoelFast）与旧版 TDM Fast 可执行文件
+  const isDownloaderExe = (name) =>
+    /joelfast/i.test(name) || /tdm.*fast/i.test(name);
+
   for (const dir of scanDirs) {
     try {
       if (!dir || !fsSync.existsSync(dir)) continue;
       const entries = fsSync.readdirSync(dir, { withFileTypes: true });
       for (const entry of entries) {
         if (entry.isFile() && /\.exe$/i.test(entry.name)) {
-          if (/tdm.*fast/i.test(entry.name) && !/setup|unins|install|update/i.test(entry.name)) {
+          if (isDownloaderExe(entry.name) && !/setup|unins|install|update/i.test(entry.name)) {
             return path.join(dir, entry.name);
           }
         }
-        if (entry.isDirectory() && /tdm/i.test(entry.name)) {
+        if (entry.isDirectory() && /joelfast|tdm/i.test(entry.name)) {
           const subDir = path.join(dir, entry.name);
           try {
             const subEntries = fsSync.readdirSync(subDir, { withFileTypes: true });
@@ -55,7 +64,7 @@ function autoDetectTdmExe() {
               if (
                 sub.isFile() &&
                 /\.exe$/i.test(sub.name) &&
-                /tdm/i.test(sub.name) &&
+                isDownloaderExe(sub.name) &&
                 !/setup|unins|install|update/i.test(sub.name)
               ) {
                 return path.join(subDir, sub.name);
@@ -419,7 +428,7 @@ function createTdmDockManager(options = {}) {
     if (!dialog) return { ok: false, canceled: true, status: getPublicSnapshot() };
     const defaultPath = settings.tdm_exe_path || path.join(os.homedir(), 'Desktop');
     const res = await dialog.showOpenDialog(mainWindow || undefined, {
-      title: '选择 TDM Fast 可执行程序 (.exe)',
+      title: '选择 JoelFast 可执行程序 (.exe)',
       defaultPath,
       filters: [{ name: 'Executable (*.exe)', extensions: ['exe'] }],
       properties: ['openFile'],
@@ -473,7 +482,7 @@ function createTdmDockManager(options = {}) {
     if (!isSupported) return { ok: false, error: 'Unsupported platform', status: getPublicSnapshot() };
     if (relBounds) lastRelBounds = relBounds;
     if (!state.exeExists) {
-      state.lastError = 'TDM Fast executable path not configured or missing';
+      state.lastError = 'JoelFast executable path not configured or missing';
       return { ok: false, error: state.lastError, status: getPublicSnapshot() };
     }
 
@@ -511,7 +520,7 @@ function createTdmDockManager(options = {}) {
       state.lastError = '';
       return { ok: true, status: getPublicSnapshot(), phys };
     }
-    state.lastError = (res && res.error) || 'Failed to attach TDM Fast';
+    state.lastError = (res && res.error) || 'Failed to attach JoelFast';
     return { ok: false, error: state.lastError, status: getPublicSnapshot() };
   }
 
@@ -590,7 +599,7 @@ function createTdmDockManager(options = {}) {
     const status = await getStatus();
     if (!status.running) {
       if (!status.exeExists) {
-        return { ok: false, needsExe: true, error: 'TDM Fast executable not configured' };
+        return { ok: false, needsExe: true, error: 'JoelFast executable not configured' };
       }
       await attach(lastRelBounds, { autoLaunch: true, visible: Boolean(lastRelBounds) });
     }
@@ -616,7 +625,7 @@ function createTdmDockManager(options = {}) {
       await new Promise((r) => setTimeout(r, 400));
     }
 
-    return { ok: false, error: `TDM capture endpoint unavailable on port ${settings.tdm_capture_port}` };
+    return { ok: false, error: `JoelFast capture endpoint unavailable on port ${settings.tdm_capture_port}` };
   }
 
   function hookWindowEvents() {

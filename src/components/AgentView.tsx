@@ -392,7 +392,7 @@ function AgentActionCard({
             <Download className="h-4 w-4 text-[#2563EB]" />
             <span>{t.agent.downloadDispatch}</span>
             <span className="rounded-inner bg-[#EFF6FF] px-2 py-0.5 font-mono text-[11px] font-medium text-[#2563EB]">
-              TDM Fast
+              JoelFast
             </span>
           </div>
           <span className="font-mono text-[12px] text-[#64748B] truncate max-w-[260px]">

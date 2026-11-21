@@ -132,7 +132,7 @@ export default function App() {
     [showToast]
   );
 
-  // Sync native TDM Fast host status & live events
+  // Sync native JoelFast host status & live events
   useEffect(() => {
     const tdmApi = window.joelDesktop?.tdm;
     if (!tdmApi || !isDesktopTdmSupported()) return;

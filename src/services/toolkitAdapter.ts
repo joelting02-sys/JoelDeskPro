@@ -285,8 +285,8 @@ export async function callCustomLlmEndpoint(
   const systemPrompt =
     config.llmSystemPrompt.trim() ||
     (lang === 'zh'
-      ? '你是 Joel Desk Pro 桌面工具箱里的极简 AI 助手。工具箱支持：TDM Fast 高速下载、Cloud Whisper Studio 云端转录、文档格式转换。请用简洁中文直接回答用户。'
-      : 'You are the minimalist AI Assistant inside Joel Desk Pro desktop workbench (supporting TDM Fast download dispatch, Cloud Whisper Studio transcription, and format conversion). Reply concisely.');
+      ? '你是 Joel Desk Pro 桌面工具箱里的极简 AI 助手。工具箱支持：JoelFast 高速下载、Cloud Whisper Studio 云端转录、文档格式转换。请用简洁中文直接回答用户。'
+      : 'You are the minimalist AI Assistant inside Joel Desk Pro desktop workbench (supporting JoelFast download dispatch, Cloud Whisper Studio transcription, and format conversion). Reply concisely.');
 
   const attachDesc =
     attachments.length > 0
@@ -609,15 +609,15 @@ export function parseAgentIntent(
   const trimmed = text.trim();
   const urlInfo = extractCleanUrl(trimmed);
 
-  // 1. Extract URL -> Dispatch to docked TDM Fast
+  // 1. Extract URL -> Dispatch to docked JoelFast
   if (urlInfo.cleanUrl) {
     const reply = isZh
       ? urlInfo.hadNoise
-        ? '已自动过滤前后杂字并提取纯净链接，可直接发送到右侧内嵌的 TDM Fast 高速下载。'
-        : '已识别链接，可直接发送到内嵌的 TDM Fast 开始下载。'
+        ? '已自动过滤前后杂字并提取纯净链接，可直接发送到右侧内嵌的 JoelFast 高速下载。'
+        : '已识别链接，可直接发送到内嵌的 JoelFast 开始下载。'
       : urlInfo.hadNoise
-        ? 'Cleaned surrounding text and extracted the URL. Ready to send directly to TDM Fast.'
-        : 'URL detected. Ready to send directly to TDM Fast.';
+        ? 'Cleaned surrounding text and extracted the URL. Ready to send directly to JoelFast.'
+        : 'URL detected. Ready to send directly to JoelFast.';
 
     return {
       reply,
