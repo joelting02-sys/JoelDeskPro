@@ -1,5 +1,9 @@
 const { app, BrowserWindow, clipboard, dialog, ipcMain, screen, shell, Menu } = require('electron');
 const path = require('node:path');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const crypto = require('node:crypto');
+const https = require('node:https');
 const { startLocalEngine } = require('./localEngine.cjs');
 const { createTdmDockManager } = require('./tdmDockManager.cjs');
 const { createWhisperManager } = require('./whisperManager.cjs');
@@ -75,8 +79,92 @@ function createWindow() {
   });
 }
 
+// TDM Fast 5.0.1 — 本机版本镜像（发布在用户自己的 GitHub 仓库 joelting02-sys/TDM-Fast）
+const TDM_INSTALLER = {
+  owner: 'joelting02-sys',
+  repo: 'TDM-Fast',
+  tag: 'v5.0.1',
+  asset: 'TDM_Fast_5.0.1_x64-portable.exe',
+  sha256: '08171D9E43C81422861472668311DD998D18A0539F845FB195EEBFBD7223120A',
+  size: 6478136,
+};
+
+function downloadHttps(url, destination, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    if (redirects > 5) return reject(new Error('Too many redirects'));
+    const request = https.get(url, { headers: { 'User-Agent': 'JoelDeskPro' } }, (response) => {
+      if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
+        response.resume();
+        const nextUrl = new URL(response.headers.location, url).toString();
+        if (!nextUrl.startsWith('https://')) return reject(new Error('Insecure redirect blocked'));
+        return resolve(downloadHttps(nextUrl, destination, redirects + 1));
+      }
+      if (response.statusCode !== 200) {
+        response.resume();
+        return reject(new Error(`Download failed (HTTP ${response.statusCode})`));
+      }
+      const output = require('node:fs').createWriteStream(destination, { flags: 'wx' });
+      response.pipe(output);
+      output.on('finish', () => output.close(resolve));
+      output.on('error', reject);
+    });
+    request.setTimeout(30000, () => request.destroy(new Error('Download timed out')));
+    request.on('error', reject);
+  });
+}
+
+async function sha256OfFile(filePath) {
+  const hash = crypto.createHash('sha256');
+  const buffer = await fs.readFile(filePath);
+  hash.update(buffer);
+  return hash.digest('hex').toUpperCase();
+}
+
+async function downloadTdmInstaller() {
+  const apiUrl = `https://api.github.com/repos/${TDM_INSTALLER.owner}/${TDM_INSTALLER.repo}/releases/tags/${TDM_INSTALLER.tag}`;
+  const response = await fetch(apiUrl, { headers: { 'User-Agent': 'JoelDeskPro', Accept: 'application/vnd.github+json' } });
+  if (!response.ok) throw new Error(`GitHub release lookup failed (HTTP ${response.status})`);
+  const release = await response.json();
+  const asset = Array.isArray(release.assets) ? release.assets.find((item) => item.name === TDM_INSTALLER.asset) : null;
+  if (!asset || !Number.isSafeInteger(asset.size) || asset.size <= 0) throw new Error('TDM Fast package not found on GitHub');
+
+  const destinationDir = path.join(os.homedir(), 'Downloads');
+  await fs.mkdir(destinationDir, { recursive: true });
+  const destination = path.join(destinationDir, TDM_INSTALLER.asset);
+  const partial = `${destination}.${crypto.randomUUID()}.download`;
+  try {
+    await downloadHttps(asset.browser_download_url, partial);
+    const stat = await fs.stat(partial);
+    if (TDM_INSTALLER.size && stat.size !== TDM_INSTALLER.size) {
+      throw new Error(`Package size mismatch (${stat.size}/${TDM_INSTALLER.size})`);
+    }
+    const digest = await sha256OfFile(partial);
+    if (TDM_INSTALLER.sha256 && digest !== TDM_INSTALLER.sha256.toUpperCase()) {
+      throw new Error(`Checksum mismatch (${digest})`);
+    }
+    await fs.rm(destination, { force: true }).catch(() => {});
+    await fs.rename(partial, destination);
+    return { ok: true, path: destination, sha256: digest };
+  } catch (error) {
+    await fs.rm(partial, { force: true }).catch(() => {});
+    throw error;
+  }
+}
+
 function registerTdmIpcHandlers() {
   ipcMain.handle('tdm:status', () => (tdmDockManager ? tdmDockManager.getStatus() : { supported: false }));
+  ipcMain.handle('tdm:download-installer', async () => {
+    try {
+      const result = await downloadTdmInstaller();
+      if (result.ok && result.path && tdmDockManager) {
+        const saved = await tdmDockManager.saveSettings({ tdm_exe_path: result.path });
+        return { ...result, status: saved?.status };
+      }
+      return result;
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
   ipcMain.handle('tdm:pick-exe', () =>
     tdmDockManager ? tdmDockManager.pickExe() : { ok: false, canceled: true }
   );

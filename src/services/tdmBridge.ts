@@ -46,6 +46,14 @@ declare global {
     tdm: {
       getStatus: () => Promise<TdmStatus>;
       pickExe: () => Promise<{ ok: boolean; canceled?: boolean; exePath?: string; status?: TdmStatus }>;
+      downloadInstaller: () => Promise<{
+        ok: boolean;
+        canceled?: boolean;
+        error?: string;
+        path?: string;
+        sha256?: string;
+        status?: TdmStatus;
+      }>;
       saveSettings: (patch: Partial<TdmNativeSettings>) => Promise<{ ok: boolean; status?: TdmStatus }>;
       attach: (
         bounds?: TdmBounds,

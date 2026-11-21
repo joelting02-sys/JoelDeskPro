@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('joelDesktop', {
   tdm: {
     getStatus: () => ipcRenderer.invoke('tdm:status'),
     pickExe: () => ipcRenderer.invoke('tdm:pick-exe'),
+    downloadInstaller: () => ipcRenderer.invoke('tdm:download-installer'),
     saveSettings: (patch) => ipcRenderer.invoke('tdm:save-settings', patch),
     attach: (bounds, options) => ipcRenderer.invoke('tdm:attach', bounds, options),
     updateBounds: (bounds) => ipcRenderer.invoke('tdm:bounds', bounds),

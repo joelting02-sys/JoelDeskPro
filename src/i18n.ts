@@ -58,6 +58,8 @@ export interface Translations {
     tdmDispatchFailed: string;
     tdmMissingExe: string;
     tdmExeSelected: (name: string) => string;
+    tdmDownloaded: (name: string) => string;
+    tdmDownloadFailed: string;
     tdmDetached: string;
     tdmReattached: string;
     tdmActivatedFromExt: string;
@@ -135,6 +137,9 @@ export interface Translations {
     webOnlyDesc: string;
     missingExeTitle: string;
     missingExeDesc: string;
+    downloadTdmBtn: string;
+    downloadTdmStatus: string;
+    downloadTdmFailed: string;
     pickExeBtn: string;
     openSettingsBtn: string;
     startingTitle: string;
@@ -270,6 +275,8 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       tdmDispatchFailed: 'Could not reach TDM Fast capture port',
       tdmMissingExe: 'Select your local TDM Fast .exe in Downloader first',
       tdmExeSelected: (name) => `Selected TDM executable: ${name}`,
+      tdmDownloaded: (name) => `Downloaded TDM Fast from GitHub: ${name}`,
+      tdmDownloadFailed: 'Could not download the TDM Fast package from GitHub',
       tdmDetached: 'Detached TDM Fast into standalone window',
       tdmReattached: 'Docked TDM Fast back into Downloader view',
       tdmActivatedFromExt: 'TDM Fast activated — switched to Downloader view',
@@ -353,6 +360,9 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       missingExeTitle: 'Locate TDM Fast Executable',
       missingExeDesc:
         'Select your local TDM Fast .exe once. After that, opening Downloader automatically launches and docks TDM Fast into this panel, while Chrome keeps using your native TDM Fast extension.',
+      downloadTdmBtn: 'Download TDM Fast from GitHub',
+      downloadTdmStatus: 'Downloading TDM Fast from GitHub…',
+      downloadTdmFailed: 'Could not download the TDM Fast package. Please try again.',
       pickExeBtn: 'Select TDM Fast (.exe)',
       openSettingsBtn: 'Open Settings',
       startingTitle: 'Launching & Docking TDM Fast…',
@@ -495,6 +505,8 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       tdmDispatchFailed: '无法连接 TDM Fast 接收端口，请确认已启动',
       tdmMissingExe: '请先在「高速下载」中选择本机 TDM Fast 程序路径',
       tdmExeSelected: (name) => `已选定 TDM 程序：${name}`,
+      tdmDownloaded: (name) => `已从 GitHub 下载 TDM Fast：${name}`,
+      tdmDownloadFailed: '无法从 GitHub 下载 TDM Fast 安装包',
       tdmDetached: '已将 TDM Fast 弹出为独立窗口',
       tdmReattached: '已将 TDM Fast 重新贴合回工具箱',
       tdmActivatedFromExt: '检测到 TDM Fast 唤起，已自动切换到下载页',
@@ -577,6 +589,9 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       missingExeTitle: '选择本机 TDM Fast 程序 (.exe)',
       missingExeDesc:
         '选择一次电脑上的 TDM Fast 主程序路径后，点击「高速下载」会自动启动并贴合进此区域；你的 Chrome 原版 TDM 插件继续按原方式工作。',
+      downloadTdmBtn: '从 GitHub 下载 TDM Fast',
+      downloadTdmStatus: '正在从 GitHub 下载 TDM Fast…',
+      downloadTdmFailed: '下载 TDM Fast 失败，请稍后重试。',
       pickExeBtn: '选择 TDM Fast (.exe)',
       openSettingsBtn: '前往设置',
       startingTitle: '正在启动并贴合 TDM Fast…',

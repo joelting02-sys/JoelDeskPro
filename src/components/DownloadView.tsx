@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import {
   AppWindow,
+  CloudDownload,
   Download,
   ExternalLink,
   FolderOpen,
@@ -20,7 +21,10 @@ interface DownloadViewProps {
   tdmStatus: TdmStatus;
   hiddenByUser: boolean;
   overlayBlocking: boolean;
+  downloadingTdm: boolean;
+  downloadError: string;
   onPickExe: () => void;
+  onDownloadTdm: () => void;
   onAttach: (bounds?: TdmBounds) => void;
   onUpdateBounds: (bounds: TdmBounds) => void;
   onSetVisible: (visible: boolean, bounds?: TdmBounds) => void;
@@ -35,7 +39,10 @@ export function DownloadView({
   tdmStatus,
   hiddenByUser,
   overlayBlocking,
+  downloadingTdm,
+  downloadError,
   onPickExe,
+  onDownloadTdm,
   onAttach,
   onUpdateBounds,
   onSetVisible,
@@ -177,8 +184,21 @@ export function DownloadView({
           <div className="mt-5 flex flex-wrap items-center gap-2.5">
             <button
               type="button"
+              onClick={onDownloadTdm}
+              disabled={downloadingTdm}
+              className="inline-flex items-center gap-2 rounded-control bg-[#2563EB] px-4 py-2 text-[13px] font-medium text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-60 whitespace-nowrap"
+            >
+              {downloadingTdm ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CloudDownload className="h-4 w-4" />
+              )}
+              {downloadingTdm ? t.downloadTdmStatus : t.downloadTdmBtn}
+            </button>
+            <button
+              type="button"
               onClick={onPickExe}
-              className="inline-flex items-center gap-2 rounded-control bg-[#2563EB] px-4 py-2 text-[13px] font-medium text-white hover:bg-[#1D4ED8] whitespace-nowrap"
+              className="inline-flex items-center gap-2 rounded-control border border-[#E5E7EB] bg-white px-4 py-2 text-[13px] font-medium text-[#475569] hover:text-[#0F172A] whitespace-nowrap"
             >
               <FolderOpen className="h-4 w-4" />
               {t.pickExeBtn}
@@ -191,6 +211,12 @@ export function DownloadView({
               {t.openSettingsBtn}
             </button>
           </div>
+
+          {downloadError && (
+            <p className="mt-3 rounded-inner bg-[#FEF2F2] px-2.5 py-1.5 font-mono text-[11px] text-[#B91C1C]">
+              {downloadError}
+            </p>
+          )}
         </div>
       )}
 
@@ -275,7 +301,26 @@ export function DownloadView({
                 <FolderOpen className="h-3.5 w-3.5" />
                 {t.changeExeBtn}
               </button>
+              <button
+                type="button"
+                onClick={onDownloadTdm}
+                disabled={downloadingTdm}
+                className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-2 text-[12px] font-medium text-[#64748B] hover:text-[#0F172A] disabled:cursor-not-allowed disabled:opacity-60 whitespace-nowrap"
+              >
+                {downloadingTdm ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <CloudDownload className="h-3.5 w-3.5" />
+                )}
+                {downloadingTdm ? t.downloadTdmStatus : t.downloadTdmBtn}
+              </button>
             </div>
+
+            {downloadError && (
+              <p className="mt-3 rounded-inner bg-[#FEF2F2] px-2.5 py-1.5 font-mono text-[11px] text-[#B91C1C]">
+                {downloadError}
+              </p>
+            )}
           </div>
         )}
 

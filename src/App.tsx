@@ -70,6 +70,8 @@ export default function App() {
     supported: isDesktopTdmSupported(),
   }));
   const [tdmHiddenByUser, setTdmHiddenByUser] = useState(false);
+  const [tdmDownloading, setTdmDownloading] = useState(false);
+  const [tdmDownloadError, setTdmDownloadError] = useState('');
 
   const [whisperStatus, setWhisperStatus] = useState<WhisperStatus>(() => ({
     ...INITIAL_WHISPER_STATUS,
@@ -251,6 +253,31 @@ export default function App() {
       setConfig((prev) => ({ ...prev, tdmExePath: res.exePath! }));
       const base = res.exePath.split(/[\\/]/).pop() || res.exePath;
       showToast(TRANSLATIONS[langRef.current].toasts.tdmExeSelected(base), 'success');
+    }
+  }, [showToast]);
+
+  const handleDownloadTdm = useCallback(async () => {
+    const tdmApi = window.joelDesktop?.tdm;
+    if (!tdmApi) return;
+    setTdmDownloading(true);
+    setTdmDownloadError('');
+    try {
+      const res = await tdmApi.downloadInstaller();
+      if (res?.status) setTdmStatus(res.status);
+      if (res?.ok && res.path) {
+        const base = res.path.split(/[\\/]/).pop() || res.path;
+        showToast(TRANSLATIONS[langRef.current].toasts.tdmDownloaded(base), 'success');
+      } else if (!res?.ok) {
+        const msg = res?.error || TRANSLATIONS[langRef.current].toasts.tdmDownloadFailed;
+        setTdmDownloadError(msg);
+        showToast(msg, 'warning');
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      setTdmDownloadError(msg);
+      showToast(msg, 'warning');
+    } finally {
+      setTdmDownloading(false);
     }
   }, [showToast]);
 
@@ -983,7 +1010,10 @@ export default function App() {
               tdmStatus={tdmStatus}
               hiddenByUser={tdmHiddenByUser}
               overlayBlocking={updateModalOpen || mobileNavOpen}
+              downloadingTdm={tdmDownloading}
+              downloadError={tdmDownloadError}
               onPickExe={handlePickTdmExe}
+              onDownloadTdm={handleDownloadTdm}
               onAttach={handleAttachTdm}
               onUpdateBounds={handleUpdateTdmBounds}
               onSetVisible={handleSetTdmVisible}

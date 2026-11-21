@@ -14,9 +14,7 @@ function autoDetectTdmExe() {
   const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
 
   const exactCandidates = [
-    path.join(home, 'Desktop', 'TDM_Fast_5.0.1_patched.exe'),
     path.join(home, 'Desktop', 'TDM Fast.exe'),
-    path.join(home, 'Downloads', 'TDM_Fast_5.0.1_patched.exe'),
     path.join(localAppData, 'Programs', 'TDM Fast', 'TDM Fast.exe'),
     path.join(localAppData, 'TDM Fast', 'TDM Fast.exe'),
     path.join(programFiles, 'TDM Fast', 'TDM Fast.exe'),
