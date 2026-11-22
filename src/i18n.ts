@@ -74,6 +74,11 @@ export interface Translations {
     terminalCmdLabel: string;
     mdPlainLabel: string;
     srtLabel: string;
+    claudianImported: (source: string) => string;
+    claudianImportFailed: string;
+    agentSettingsSaved: string;
+    agentWorkspaceUpdated: (name: string) => string;
+    agentStopped: string;
   };
   agent: {
     dropTitle: string;
@@ -106,6 +111,16 @@ export interface Translations {
     activeLocalRouter: string;
     activeCustomModel: (model: string) => string;
     thinkingCustomLlm: (model: string) => string;
+    turboMode: string;
+    normalMode: string;
+    workspaceLabel: string;
+    sessionActive: string;
+    stopRun: string;
+    thinkingAndTools: (n: number) => string;
+    thinkingTitle: string;
+    streamingLabel: string;
+    cliNotInstalled: string;
+    settingsLink: string;
   };
   transcribe: {
     webOnlyTitle: string;
@@ -204,6 +219,27 @@ export interface Translations {
     testFailed: (detail: string) => string;
     validateEndpoint: string;
     saveConfig: string;
+    cliTitle: string;
+    cliDesc: string;
+    importClaudianBtn: string;
+    claudianImportedHint: (source: string) => string;
+    activeAgentLabel: string;
+    permissionModeLabel: string;
+    permTurboLabel: string;
+    permTurboDesc: string;
+    permNormalLabel: string;
+    permNormalDesc: string;
+    workspaceDirLabel: string;
+    browseBtn: string;
+    sharedEnvLabel: string;
+    sharedEnvPlaceholder: string;
+    cliPathLabel: string;
+    defaultModelLabel: string;
+    defaultModelPlaceholder: string;
+    providerEnvLabel: string;
+    installedBadge: string;
+    missingBadge: string;
+    saveAgentConfig: string;
   };
   updateModal: {
     title: string;
@@ -291,6 +327,11 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       terminalCmdLabel: 'update command',
       mdPlainLabel: 'plain Markdown',
       srtLabel: 'SRT subtitles',
+      claudianImported: (source) => `Imported Claudian config from ${source}`,
+      claudianImportFailed: 'Failed to import Obsidian Claudian config',
+      agentSettingsSaved: 'CLI Agent settings saved',
+      agentWorkspaceUpdated: (name) => `Workspace set to ${name}`,
+      agentStopped: 'Stopped active Agent run',
     },
     agent: {
       dropTitle: 'Drop files to analyze automatically',
@@ -325,6 +366,16 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       activeLocalRouter: 'Built-in Local Router',
       activeCustomModel: (model) => `Model: ${model}`,
       thinkingCustomLlm: (model) => `Waiting for ${model}…`,
+      turboMode: 'Turbo · Auto',
+      normalMode: 'Normal · Ask',
+      workspaceLabel: 'Workspace',
+      sessionActive: 'Session kept',
+      stopRun: 'Stop',
+      thinkingAndTools: (n) => `Reasoning & tool calls (${n})`,
+      thinkingTitle: 'Reasoning',
+      streamingLabel: 'Running…',
+      cliNotInstalled: 'CLI missing',
+      settingsLink: 'Agent Settings',
     },
     transcribe: {
       webOnlyTitle: 'Cloud Whisper Studio Not Detected',
@@ -432,6 +483,28 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       testFailed: (detail) => `Connection failed: ${detail}`,
       validateEndpoint: 'Test Connection',
       saveConfig: 'Save & Sync to Home',
+      cliTitle: 'CLI Agents (Claudian Style)',
+      cliDesc:
+        'Drive local Claude Code, Codex, and DeepSeek Harness (DSH) directly with Magpie / custom environment variables and Turbo auto-execution.',
+      importClaudianBtn: 'Import from Obsidian Claudian',
+      claudianImportedHint: (source) => `Imported from: ${source}`,
+      activeAgentLabel: 'Default Agent Backend',
+      permissionModeLabel: 'Execution Permission',
+      permTurboLabel: 'Turbo (Auto-Approve)',
+      permTurboDesc: 'Bypasses tool confirmation prompts (--dangerously-skip-permissions / danger-full-access), like Antigravity.',
+      permNormalLabel: 'Normal (Restricted)',
+      permNormalDesc: 'Uses workspace-write sandbox / asks before sensitive actions.',
+      workspaceDirLabel: 'Default Workspace Directory',
+      browseBtn: 'Browse',
+      sharedEnvLabel: 'Shared Environment Variables (KEY=VALUE)',
+      sharedEnvPlaceholder: 'ANTHROPIC_BASE_URL=http://localhost:3425\nANTHROPIC_API_KEY=magpie',
+      cliPathLabel: 'Executable Path',
+      defaultModelLabel: 'Model Override (Optional)',
+      defaultModelPlaceholder: 'Leave empty to use CLI default',
+      providerEnvLabel: 'Provider Env Vars (Optional)',
+      installedBadge: 'Detected',
+      missingBadge: 'Not Found',
+      saveAgentConfig: 'Save CLI Agent Settings',
     },
     updateModal: {
       title: 'Joel Desk Pro Updates',
@@ -521,6 +594,11 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       terminalCmdLabel: '终端更新命令',
       mdPlainLabel: '无时间轴 Markdown',
       srtLabel: 'SRT 字幕',
+      claudianImported: (source) => `已从 Claudian 导入配置：${source}`,
+      claudianImportFailed: '未找到或无法读取 Obsidian Claudian 配置',
+      agentSettingsSaved: 'CLI Agent 配置已保存',
+      agentWorkspaceUpdated: (name) => `工作目录已切换至 ${name}`,
+      agentStopped: '已停止当前 Agent 执行',
     },
     agent: {
       dropTitle: '松开文件，交给 AI 自动识别',
@@ -554,6 +632,16 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       activeLocalRouter: '内置本地智能路由',
       activeCustomModel: (model) => `当前模型：${model}`,
       thinkingCustomLlm: (model) => `正在请求 ${model}…`,
+      turboMode: 'Turbo · 免确认',
+      normalMode: '普通 · 需确认',
+      workspaceLabel: '工作目录',
+      sessionActive: '会话保持中',
+      stopRun: '停止',
+      thinkingAndTools: (n) => `思考与工具调用 (${n})`,
+      thinkingTitle: '思考过程',
+      streamingLabel: '执行中…',
+      cliNotInstalled: '未检测到 CLI',
+      settingsLink: 'Agent 配置',
     },
     transcribe: {
       webOnlyTitle: '未检测到 Cloud Whisper Studio 本地服务',
@@ -659,6 +747,28 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       testFailed: (detail) => `连接失败：${detail}`,
       validateEndpoint: '测试连接',
       saveConfig: '保存并同步到主页',
+      cliTitle: 'CLI Agent 引擎配置（类 Claudian）',
+      cliDesc:
+        '直接调用本机 Claude Code、Codex CLI 与 DeepSeek Harness (DSH)，支持注入 Magpie 等环境变量及 Turbo 免确认执行。',
+      importClaudianBtn: '从 Obsidian Claudian 导入',
+      claudianImportedHint: (source) => `已导入来源：${source}`,
+      activeAgentLabel: '默认对话引擎',
+      permissionModeLabel: '权限模式',
+      permTurboLabel: 'Turbo 模式（全权免确认）',
+      permTurboDesc: '自动放行文件读写与命令行操作（类 Antigravity），适合桌面高效协作。',
+      permNormalLabel: '普通模式（受限/需确认）',
+      permNormalDesc: '在工作区沙盒内运行或按工具策略确认。',
+      workspaceDirLabel: '默认工作目录 (Workspace)',
+      browseBtn: '浏览',
+      sharedEnvLabel: '共享环境变量 Shared Env（每行 KEY=VALUE）',
+      sharedEnvPlaceholder: 'ANTHROPIC_BASE_URL=http://localhost:3425\nANTHROPIC_API_KEY=magpie',
+      cliPathLabel: '可执行文件路径',
+      defaultModelLabel: '默认模型（选填）',
+      defaultModelPlaceholder: '留空则沿用各 CLI 默认模型',
+      providerEnvLabel: '独立环境变量（选填）',
+      installedBadge: '已就绪',
+      missingBadge: '未找到',
+      saveAgentConfig: '保存 CLI Agent 配置',
     },
     updateModal: {
       title: 'Joel Desk Pro 版本更新',

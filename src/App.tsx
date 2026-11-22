@@ -9,8 +9,13 @@ import { SettingsView } from './components/SettingsView';
 import { UpdateModal } from './components/UpdateModal';
 import {
   AgentActionPayload,
+  AgentBackendMode,
   AgentMessage,
+  AgentRunnerStatus,
+  AgentSettings,
+  AgentToolStep,
   AttachedFileItem,
+  CliAgentProvider,
   ComputeProvider,
   ConversionTask,
   DocumentFormat,
@@ -21,9 +26,14 @@ import {
   WorkspaceView,
 } from './types/toolkit';
 import {
+  INITIAL_AGENT_STATUS,
+  isDesktopAgentSupported,
+} from './services/agentBridge';
+import {
   DEFAULT_ENDPOINT_CONFIG,
   callCustomLlmEndpoint,
   detectDocumentFormat,
+  formatBytes,
   loadSavedLlmConfig,
   nowTimeLabel,
   parseAgentIntent,
@@ -79,6 +89,15 @@ export default function App() {
   }));
   const [whisperVisited, setWhisperVisited] = useState(false);
   const [whisperReloadNonce, setWhisperReloadNonce] = useState(0);
+  const [agentStatus, setAgentStatus] = useState<AgentRunnerStatus>(() => ({
+    ...INITIAL_AGENT_STATUS,
+    supported: isDesktopAgentSupported(),
+  }));
+  const [agentSessions, setAgentSessions] = useState<Record<CliAgentProvider, string | null>>({
+    claude: null,
+    codex: null,
+    dsh: null,
+  });
 
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<GitHubUpdateInfo | null>(null);
@@ -95,6 +114,9 @@ export default function App() {
   const lastDownloadBoundsRef = useRef<TdmBounds | undefined>(undefined);
   const whisperIframeRef = useRef<HTMLIFrameElement>(null);
   const diskLlmSyncedRef = useRef(false);
+  const activeRunRef = useRef<{ runId: string; messageId: string; provider: CliAgentProvider } | null>(
+    null
+  );
 
   const t = TRANSLATIONS[lang];
 
@@ -225,6 +247,126 @@ export default function App() {
     const off = whisperApi.onEvent((evt) => {
       if (!mounted || !evt) return;
       if (evt.status) applyWhisperStatus(evt.status, false);
+    });
+
+    return () => {
+      mounted = false;
+      off();
+    };
+  }, []);
+
+  // Sync Claudian-style CLI Agent runner status & streaming events
+  useEffect(() => {
+    const agentApi = window.joelDesktop?.agent;
+    if (!agentApi || !isDesktopAgentSupported()) return;
+
+    let mounted = true;
+    agentApi.getStatus().then((st) => {
+      if (!mounted || !st) return;
+      setAgentStatus(st);
+    });
+
+    const off = agentApi.onEvent((evt) => {
+      if (!mounted || !evt) return;
+      if (evt.type === 'status' && evt.status && typeof evt.status === 'object') {
+        setAgentStatus(evt.status as AgentRunnerStatus);
+        return;
+      }
+
+      const currentRun = activeRunRef.current;
+      if (!currentRun || (evt.runId && evt.runId !== currentRun.runId)) return;
+
+      if (evt.type === 'session' && evt.sessionId) {
+        setAgentSessions((prev) => ({
+          ...prev,
+          [currentRun.provider]: evt.sessionId!,
+        }));
+        return;
+      }
+
+      if (evt.type === 'text-delta' && typeof evt.text === 'string') {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === currentRun.messageId ? { ...m, content: `${m.content}${evt.text}` } : m
+          )
+        );
+        return;
+      }
+
+      if (evt.type === 'text-replace' && typeof evt.text === 'string') {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === currentRun.messageId ? { ...m, content: evt.text! } : m))
+        );
+        return;
+      }
+
+      if (evt.type === 'thinking-delta' && typeof evt.text === 'string') {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === currentRun.messageId
+              ? { ...m, thinking: `${m.thinking || ''}${evt.text}` }
+              : m
+          )
+        );
+        return;
+      }
+
+      if (evt.type === 'tool-call' && evt.toolId) {
+        const nextStepStatus =
+          evt.status === 'error' || evt.status === 'done' || evt.status === 'running'
+            ? evt.status
+            : 'running';
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id !== currentRun.messageId) return m;
+            const steps = [...(m.toolSteps || [])];
+            const idx = steps.findIndex((s) => s.id === evt.toolId);
+            if (idx >= 0) {
+              const prevStep = steps[idx];
+              steps[idx] = {
+                ...prevStep,
+                name: evt.name || prevStep.name,
+                input: evt.input ?? prevStep.input,
+                output: evt.output ?? prevStep.output,
+                status: nextStepStatus,
+              };
+            } else {
+              const newStep: AgentToolStep = {
+                id: evt.toolId!,
+                name: evt.name || 'tool',
+                input: evt.input,
+                output: evt.output,
+                status: nextStepStatus,
+              };
+              steps.push(newStep);
+            }
+            return { ...m, toolSteps: steps };
+          })
+        );
+        return;
+      }
+
+      if (evt.type === 'done') {
+        if (evt.sessionId) {
+          setAgentSessions((prev) => ({
+            ...prev,
+            [currentRun.provider]: evt.sessionId!,
+          }));
+        }
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === currentRun.messageId
+              ? {
+                  ...m,
+                  isStreaming: false,
+                  error: evt.error || m.error,
+                }
+              : m
+          )
+        );
+        activeRunRef.current = null;
+        setAgentSending(false);
+      }
     });
 
     return () => {
@@ -569,6 +711,75 @@ export default function App() {
     [showToast]
   );
 
+  // Claudian-style CLI Agent handlers
+  const handleChangeAgentProvider = useCallback(async (provider: AgentBackendMode) => {
+    const agentApi = window.joelDesktop?.agent;
+    if (!agentApi) return;
+    const res = await agentApi.saveSettings({ activeProvider: provider });
+    if (res?.status) setAgentStatus(res.status);
+  }, []);
+
+  const handleToggleAgentPermission = useCallback(async () => {
+    const agentApi = window.joelDesktop?.agent;
+    if (!agentApi) return;
+    const nextMode = agentStatus.settings.permissionMode === 'turbo' ? 'normal' : 'turbo';
+    const res = await agentApi.saveSettings({ permissionMode: nextMode });
+    if (res?.status) setAgentStatus(res.status);
+  }, [agentStatus.settings.permissionMode]);
+
+  const handlePickAgentWorkspace = useCallback(async () => {
+    const agentApi = window.joelDesktop?.agent;
+    if (!agentApi) return;
+    const res = await agentApi.pickWorkspace();
+    if (res?.status) setAgentStatus(res.status);
+    if (res?.ok && res.workspaceDir) {
+      const base = res.workspaceDir.split(/[\\/]/).filter(Boolean).pop() || res.workspaceDir;
+      showToast(TRANSLATIONS[langRef.current].toasts.agentWorkspaceUpdated(base), 'success');
+    }
+  }, [showToast]);
+
+  const handlePickAgentCli = useCallback(async (provider: CliAgentProvider) => {
+    const agentApi = window.joelDesktop?.agent;
+    if (!agentApi) return;
+    const res = await agentApi.pickCli(provider);
+    if (res?.status) setAgentStatus(res.status);
+  }, []);
+
+  const handleImportClaudian = useCallback(async () => {
+    const agentApi = window.joelDesktop?.agent;
+    if (!agentApi) {
+      return { ok: false, error: TRANSLATIONS[langRef.current].toasts.claudianImportFailed };
+    }
+    const res = await agentApi.importClaudian();
+    if (res?.status) setAgentStatus(res.status);
+    if (res?.ok && res.sourcePath) {
+      showToast(TRANSLATIONS[langRef.current].toasts.claudianImported(res.sourcePath), 'success');
+    } else {
+      showToast(res?.error || TRANSLATIONS[langRef.current].toasts.claudianImportFailed, 'warning');
+    }
+    return { ok: Boolean(res?.ok), sourcePath: res?.sourcePath, error: res?.error };
+  }, [showToast]);
+
+  const handleSaveAgentSettings = useCallback(
+    async (next: AgentSettings) => {
+      const agentApi = window.joelDesktop?.agent;
+      if (!agentApi) return;
+      const res = await agentApi.saveSettings(next);
+      if (res?.status) setAgentStatus(res.status);
+      if (res?.ok) {
+        showToast(TRANSLATIONS[langRef.current].toasts.agentSettingsSaved, 'success');
+      }
+    },
+    [showToast]
+  );
+
+  const handleStopAgentRun = useCallback(async () => {
+    const runId = activeRunRef.current?.runId;
+    if (!runId) return;
+    await window.joelDesktop?.agent?.stop(runId);
+    showToast(TRANSLATIONS[langRef.current].toasts.agentStopped, 'neutral');
+  }, [showToast]);
+
   // Agent Handlers
   const handleSendAgentMessage = (text: string, attachments: AttachedFileItem[]) => {
     const userMsg: AgentMessage = {
@@ -601,12 +812,97 @@ export default function App() {
     });
 
     const assistantMsgId = `msg-a-${Date.now() + 1}`;
+    const agentApi = window.joelDesktop?.agent;
+    const activeProvider = agentStatus.settings.activeProvider;
+    const useCliAgent = Boolean(
+      agentApi && isDesktopAgentSupported() && activeProvider !== 'custom_endpoint'
+    );
+
+    if (useCliAgent && activeProvider !== 'custom_endpoint') {
+      const cliProvider = activeProvider as CliAgentProvider;
+      const runId = `run-${Date.now()}`;
+      const configuredModel = agentStatus.settings.providers[cliProvider]?.model || '';
+
+      let effectivePrompt = text.trim();
+      if (attachments.length > 0) {
+        const filesBlock = attachments
+          .map((f) => `- ${f.localPath || f.name} (${f.category}, ${formatBytes(f.size)})`)
+          .join('\n');
+        effectivePrompt = effectivePrompt
+          ? `${effectivePrompt}\n\n[Attached Files]\n${filesBlock}`
+          : `Please inspect and help handle these files:\n${filesBlock}`;
+      }
+
+      const assistantMsg: AgentMessage = {
+        id: assistantMsgId,
+        role: 'assistant',
+        content: '',
+        action: parsed.action,
+        timestamp: nowTimeLabel(),
+        provider: cliProvider,
+        model: configuredModel || undefined,
+        thinking: '',
+        toolSteps: [],
+        isStreaming: true,
+      };
+
+      activeRunRef.current = { runId, messageId: assistantMsgId, provider: cliProvider };
+      setMessages((prev) => [...prev, userMsg, assistantMsg]);
+      setAgentSending(true);
+
+      agentApi!
+        .send({
+          runId,
+          provider: cliProvider,
+          prompt: effectivePrompt,
+          sessionId: agentSessions[cliProvider],
+          workspaceDir: agentStatus.settings.workspaceDir,
+          permissionMode: agentStatus.settings.permissionMode,
+          model: configuredModel,
+          systemPrompt: agentStatus.settings.systemPrompt || config.llmSystemPrompt,
+        })
+        .then((res) => {
+          if (!res?.ok) {
+            activeRunRef.current = null;
+            setAgentSending(false);
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMsgId
+                  ? {
+                      ...m,
+                      isStreaming: false,
+                      error: res?.error || 'Failed to launch CLI Agent',
+                    }
+                  : m
+              )
+            );
+          }
+        })
+        .catch((err) => {
+          activeRunRef.current = null;
+          setAgentSending(false);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgId
+                ? {
+                    ...m,
+                    isStreaming: false,
+                    error: err instanceof Error ? err.message : String(err),
+                  }
+                : m
+            )
+          );
+        });
+      return;
+    }
+
     const assistantMsg: AgentMessage = {
       id: assistantMsgId,
       role: 'assistant',
       content: parsed.reply,
       action: parsed.action,
       timestamp: nowTimeLabel(),
+      provider: 'custom_endpoint',
     };
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
 
@@ -773,7 +1069,13 @@ export default function App() {
         <button
           type="button"
           onClick={() => {
+            if (activeRunRef.current) {
+              window.joelDesktop?.agent?.stop(activeRunRef.current.runId).catch(() => {});
+              activeRunRef.current = null;
+              setAgentSending(false);
+            }
             setMessages([]);
+            setAgentSessions({ claude: null, codex: null, dsh: null });
             showToast(t.toasts.newChatStarted);
           }}
           className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3.5 py-1.5 text-[12px] font-medium text-[#0F172A] hover:bg-[#F8F9FA] whitespace-nowrap shrink-0"
@@ -975,6 +1277,12 @@ export default function App() {
             <AgentView
               lang={lang}
               config={config}
+              agentStatus={agentStatus}
+              activeSessionId={
+                agentStatus.settings.activeProvider === 'custom_endpoint'
+                  ? null
+                  : agentSessions[agentStatus.settings.activeProvider]
+              }
               isSending={agentSending}
               messages={messages}
               onSendMessage={handleSendAgentMessage}
@@ -982,6 +1290,10 @@ export default function App() {
               onDispatchAction={handleDispatchAgentAction}
               onNavigateView={setActiveView}
               onCopyText={handleCopyText}
+              onChangeProvider={handleChangeAgentProvider}
+              onTogglePermissionMode={handleToggleAgentPermission}
+              onPickWorkspace={handlePickAgentWorkspace}
+              onStopRun={handleStopAgentRun}
             />
           )}
 
@@ -1058,6 +1370,7 @@ export default function App() {
             <SettingsView
               lang={lang}
               config={config}
+              agentStatus={agentStatus}
               onSaveConfig={(next) => {
                 setConfig(next);
                 saveLlmConfigToStorage(next);
@@ -1076,6 +1389,10 @@ export default function App() {
                 }
                 showToast(t.toasts.configSaved, 'success');
               }}
+              onSaveAgentSettings={handleSaveAgentSettings}
+              onImportClaudian={handleImportClaudian}
+              onPickAgentWorkspace={handlePickAgentWorkspace}
+              onPickAgentCli={handlePickAgentCli}
             />
           )}
         </main>

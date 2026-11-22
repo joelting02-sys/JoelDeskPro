@@ -43,6 +43,46 @@ export interface AttachedFileItem {
   category: 'audio' | 'video' | 'document' | 'other';
   extension: string;
   rawFile?: File;
+  localPath?: string;
+}
+
+export type CliAgentProvider = 'claude' | 'codex' | 'dsh';
+export type AgentBackendMode = CliAgentProvider | 'custom_endpoint';
+export type AgentPermissionMode = 'turbo' | 'normal';
+
+export interface AgentToolStep {
+  id: string;
+  name: string;
+  input?: string;
+  output?: string;
+  status: 'running' | 'done' | 'error';
+}
+
+export interface AgentProviderConfig {
+  cliPath: string;
+  model: string;
+  envVars: string;
+}
+
+export interface AgentSettings {
+  activeProvider: AgentBackendMode;
+  permissionMode: AgentPermissionMode;
+  workspaceDir: string;
+  sharedEnv: string;
+  systemPrompt: string;
+  providers: Record<CliAgentProvider, AgentProviderConfig>;
+}
+
+export type AgentCliProbe = Record<
+  CliAgentProvider,
+  { installed: boolean; resolvedPath: string }
+>;
+
+export interface AgentRunnerStatus {
+  supported: boolean;
+  settings: AgentSettings;
+  probes: AgentCliProbe;
+  activeRunId: string | null;
 }
 
 export type AgentActionPayload =
@@ -82,6 +122,12 @@ export interface AgentMessage {
   attachments?: AttachedFileItem[];
   action?: AgentActionPayload;
   timestamp: string;
+  provider?: AgentBackendMode;
+  model?: string;
+  thinking?: string;
+  toolSteps?: AgentToolStep[];
+  isStreaming?: boolean;
+  error?: string;
 }
 
 export interface EndpointConfig {

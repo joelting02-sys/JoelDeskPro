@@ -48,4 +48,23 @@ contextBridge.exposeInMainWorld('joelDesktop', {
       return () => ipcRenderer.removeListener('whisper:event', handler);
     },
   },
+  agent: {
+    getStatus: () => ipcRenderer.invoke('agent:status'),
+    saveSettings: (patch) => ipcRenderer.invoke('agent:save-settings', patch),
+    importClaudian: (customPath) => ipcRenderer.invoke('agent:import-claudian', customPath),
+    pickWorkspace: () => ipcRenderer.invoke('agent:pick-workspace'),
+    pickCli: (provider) => ipcRenderer.invoke('agent:pick-cli', provider),
+    send: (payload) => ipcRenderer.invoke('agent:send', payload),
+    stop: (runId) => ipcRenderer.invoke('agent:stop', runId),
+    onEvent: (listener) => {
+      if (typeof listener !== 'function') return () => {};
+      const handler = (_event, payload) => {
+        try {
+          listener(payload);
+        } catch {}
+      };
+      ipcRenderer.on('agent:event', handler);
+      return () => ipcRenderer.removeListener('agent:event', handler);
+    },
+  },
 });

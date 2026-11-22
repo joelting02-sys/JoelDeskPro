@@ -1,23 +1,35 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertCircle,
   ArrowRight,
   ArrowUp,
   AudioWaveform,
   Check,
+  ChevronDown,
+  ChevronRight,
   Copy,
   Download,
   FileOutput,
   FileText,
   Film,
+  FolderOpen,
   Link2,
   Loader2,
   Paperclip,
+  ShieldCheck,
   SlidersHorizontal,
+  Square,
+  Terminal,
+  Wrench,
   X,
+  Zap,
 } from 'lucide-react';
 import {
   AgentActionPayload,
+  AgentBackendMode,
   AgentMessage,
+  AgentRunnerStatus,
+  AgentToolStep,
   AttachedFileItem,
   ComputeProvider,
   DocumentFormat,
@@ -35,12 +47,15 @@ import {
   getFileExtension,
   getWhisperPresets,
 } from '../services/toolkitAdapter';
+import { AGENT_PROVIDER_META } from '../services/agentBridge';
 import { AppLanguage, TRANSLATIONS } from '../i18n';
 import { BrandLogo } from './BrandLogo';
 
 interface AgentViewProps {
   lang: AppLanguage;
   config: EndpointConfig;
+  agentStatus: AgentRunnerStatus;
+  activeSessionId: string | null;
   isSending?: boolean;
   messages: AgentMessage[];
   onSendMessage: (text: string, attachments: AttachedFileItem[]) => void;
@@ -48,11 +63,19 @@ interface AgentViewProps {
   onDispatchAction: (messageId: string, action: AgentActionPayload) => void;
   onNavigateView: (view: WorkspaceView) => void;
   onCopyText: (text: string, label: string) => void;
+  onChangeProvider: (provider: AgentBackendMode) => void;
+  onTogglePermissionMode: () => void;
+  onPickWorkspace: () => void;
+  onStopRun: () => void;
 }
+
+const PROVIDER_PILLS: AgentBackendMode[] = ['claude', 'codex', 'dsh', 'custom_endpoint'];
 
 export function AgentView({
   lang,
   config,
+  agentStatus,
+  activeSessionId,
   isSending = false,
   messages,
   onSendMessage,
@@ -60,6 +83,10 @@ export function AgentView({
   onDispatchAction,
   onNavigateView,
   onCopyText,
+  onChangeProvider,
+  onTogglePermissionMode,
+  onPickWorkspace,
+  onStopRun,
 }: AgentViewProps) {
   const t = TRANSLATIONS[lang];
   const [draft, setDraft] = useState('');
@@ -85,12 +112,14 @@ export function AgentView({
       category: detectFileCategory(file.name),
       extension: getFileExtension(file.name),
       rawFile: file,
+      localPath: (file as File & { path?: string }).path || undefined,
     }));
     setAttachments((prev) => [...prev, ...mapped]);
   };
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
+    if (isSending) return;
     if (!draft.trim() && attachments.length === 0) return;
     onSendMessage(draft.trim(), attachments);
     setDraft('');
@@ -127,6 +156,13 @@ export function AgentView({
   };
 
   const isEmpty = messages.length === 0;
+  const activeMode = agentStatus.supported ? agentStatus.settings.activeProvider : 'custom_endpoint';
+  const isCliMode = agentStatus.supported && activeMode !== 'custom_endpoint';
+  const isTurbo = agentStatus.settings.permissionMode !== 'normal';
+  const workspaceName =
+    agentStatus.settings.workspaceDir.split(/[\\/]/).filter(Boolean).pop() ||
+    agentStatus.settings.workspaceDir ||
+    t.agent.workspaceLabel;
 
   return (
     <div
@@ -135,6 +171,97 @@ export function AgentView({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {/* Claudian-style Agent Bar */}
+      {agentStatus.supported && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E5E7EB] bg-white px-5 py-2 sm:px-8">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {PROVIDER_PILLS.map((mode) => {
+              const meta = AGENT_PROVIDER_META[mode];
+              const isSelected = activeMode === mode;
+              const isCli = mode !== 'custom_endpoint';
+              const installed = isCli ? agentStatus.probes[mode]?.installed : true;
+              const dotClass = !isCli
+                ? 'bg-[#2563EB]'
+                : installed
+                  ? 'bg-[#16A34A]'
+                  : 'bg-[#CBD5E1]';
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  disabled={isSending}
+                  onClick={() => onChangeProvider(mode)}
+                  title={
+                    isCli && !installed
+                      ? `${meta.label}: ${t.agent.cliNotInstalled}`
+                      : meta.label
+                  }
+                  className={`inline-flex items-center gap-1.5 rounded-control border px-2.5 py-1 text-[12px] font-medium transition-colors whitespace-nowrap disabled:opacity-60 ${
+                    isSelected
+                      ? 'border-[#0F172A] bg-[#0F172A] text-white'
+                      : 'border-[#E5E7EB] bg-[#F8F9FA] text-[#475569] hover:border-[#CBD5E1] hover:bg-white hover:text-[#0F172A]'
+                  }`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
+                  <span>{meta.shortLabel}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {isCliMode && (
+              <>
+                <button
+                  type="button"
+                  disabled={isSending}
+                  onClick={onTogglePermissionMode}
+                  className={`inline-flex items-center gap-1 rounded-control border px-2.5 py-1 text-[11px] font-medium transition-colors whitespace-nowrap disabled:opacity-60 ${
+                    isTurbo
+                      ? 'border-[#FDE68A] bg-[#FEF3C7] text-[#B45309] hover:bg-[#FDE68A]/70'
+                      : 'border-[#E5E7EB] bg-[#F8F9FA] text-[#475569] hover:bg-white'
+                  }`}
+                >
+                  {isTurbo ? <Zap className="h-3 w-3" /> : <ShieldCheck className="h-3 w-3" />}
+                  <span>{isTurbo ? t.agent.turboMode : t.agent.normalMode}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSending}
+                  onClick={onPickWorkspace}
+                  title={agentStatus.settings.workspaceDir}
+                  className="inline-flex max-w-[200px] items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-2.5 py-1 text-[11px] font-medium text-[#475569] transition-colors hover:border-[#2563EB] hover:bg-white hover:text-[#0F172A] disabled:opacity-60"
+                >
+                  <FolderOpen className="h-3 w-3 shrink-0 text-[#64748B]" />
+                  <span className="truncate font-mono">{workspaceName}</span>
+                </button>
+
+                {activeSessionId && (
+                  <span
+                    title={activeSessionId}
+                    className="inline-flex items-center gap-1 rounded-inner bg-[#EFF6FF] px-2 py-1 font-mono text-[11px] text-[#1D4ED8] whitespace-nowrap"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB]" />
+                    {t.agent.sessionActive}
+                  </span>
+                )}
+              </>
+            )}
+
+            <button
+              type="button"
+              onClick={() => onNavigateView('settings')}
+              title={t.agent.settingsLink}
+              aria-label={t.agent.settingsLink}
+              className="flex h-7 w-7 items-center justify-center rounded-control border border-[#E5E7EB] bg-[#F8F9FA] text-[#64748B] hover:border-[#CBD5E1] hover:bg-white hover:text-[#0F172A]"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Full-pane Drag & Drop Overlay */}
       {isDragging && (
         <div className="pointer-events-none absolute inset-4 z-30 flex items-center justify-center rounded-panel border-2 border-dashed border-[#2563EB] bg-white/92">
@@ -191,15 +318,53 @@ export function AgentView({
                     {msg.content && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
                   </div>
                 ) : (
-                  <div className="w-full max-w-[680px]">
-                    <div className="flex items-center gap-2 text-[12px] text-[#64748B]">
-                      <span className="font-medium text-[#0F172A]">Joel Desk Pro Agent</span>
+                  <div className="w-full max-w-[720px]">
+                    <div className="flex flex-wrap items-center gap-2 text-[12px] text-[#64748B]">
+                      <span className="inline-flex items-center gap-1.5 font-medium text-[#0F172A]">
+                        {msg.provider && msg.provider !== 'custom_endpoint' && (
+                          <Terminal className="h-3.5 w-3.5 text-[#2563EB]" />
+                        )}
+                        {msg.provider ? AGENT_PROVIDER_META[msg.provider].label : 'Joel Desk Pro Agent'}
+                      </span>
+                      {msg.model && (
+                        <span className="rounded-inner bg-[#F3F4F6] px-1.5 py-0.5 font-mono text-[11px] text-[#475569]">
+                          {msg.model}
+                        </span>
+                      )}
                       <span aria-hidden="true">·</span>
                       <span className="font-mono tabular-nums">{msg.timestamp}</span>
+                      {msg.isStreaming && (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-[#2563EB]">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          {t.agent.streamingLabel}
+                        </span>
+                      )}
                     </div>
-                    <p className="mt-1.5 whitespace-pre-wrap text-[14px] leading-relaxed text-[#1E293B]">
-                      {msg.content}
-                    </p>
+
+                    {(msg.thinking || (msg.toolSteps && msg.toolSteps.length > 0)) && (
+                      <AgentTraceDrawer
+                        lang={lang}
+                        thinking={msg.thinking}
+                        toolSteps={msg.toolSteps}
+                        isStreaming={Boolean(msg.isStreaming)}
+                      />
+                    )}
+
+                    {(msg.content || msg.isStreaming) && (
+                      <div className="mt-2 whitespace-pre-wrap break-words text-[14px] leading-relaxed text-[#1E293B]">
+                        {msg.content}
+                        {msg.isStreaming && (
+                          <span className="ml-1 inline-block h-3.5 w-1.5 animate-pulse bg-[#2563EB] align-middle" />
+                        )}
+                      </div>
+                    )}
+
+                    {msg.error && (
+                      <div className="mt-2.5 flex items-start gap-2 rounded-control border border-[#FECACA] bg-[#FEF2F2] px-3.5 py-2.5 text-[12px] text-[#B91C1C]">
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span className="whitespace-pre-wrap break-words font-mono">{msg.error}</span>
+                      </div>
+                    )}
 
                     {msg.action && (
                       <div className="mt-3">
@@ -218,7 +383,7 @@ export function AgentView({
                 )}
               </div>
             ))}
-            {isSending && (
+            {isSending && !messages.some((m) => m.isStreaming) && (
               <div className="flex items-center gap-2 text-[13px] text-[#64748B]">
                 <Loader2 className="h-4 w-4 animate-spin text-[#2563EB]" />
                 <span>{t.agent.thinkingCustomLlm(config.llmModel)}</span>
@@ -326,14 +491,26 @@ export function AgentView({
               className="max-h-32 flex-1 resize-none bg-transparent py-2 text-[14px] text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none"
             />
 
-            <button
-              type="submit"
-              disabled={!draft.trim() && attachments.length === 0}
-              aria-label={t.agent.sendCommand}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-[#2563EB] text-white transition-colors duration-150 hover:bg-[#1D4ED8] disabled:bg-[#CBD5E1] disabled:cursor-not-allowed"
-            >
-              <ArrowUp className="h-4 w-4" strokeWidth={2.2} />
-            </button>
+            {isSending && isCliMode ? (
+              <button
+                type="button"
+                onClick={onStopRun}
+                aria-label={t.agent.stopRun}
+                title={t.agent.stopRun}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-[#DC2626] text-white transition-colors duration-150 hover:bg-[#B91C1C]"
+              >
+                <Square className="h-3.5 w-3.5 fill-current" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={isSending || (!draft.trim() && attachments.length === 0)}
+                aria-label={t.agent.sendCommand}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-control bg-[#2563EB] text-white transition-colors duration-150 hover:bg-[#1D4ED8] disabled:bg-[#CBD5E1] disabled:cursor-not-allowed"
+              >
+                <ArrowUp className="h-4 w-4" strokeWidth={2.2} />
+              </button>
+            )}
           </div>
 
           <div className="mt-2 flex items-center justify-between text-[11px] text-[#64748B]">
@@ -344,19 +521,108 @@ export function AgentView({
             >
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  config.runtimeMode === 'custom_endpoint' ? 'bg-[#2563EB]' : 'bg-[#16A34A]'
+                  isCliMode || config.runtimeMode === 'custom_endpoint' ? 'bg-[#2563EB]' : 'bg-[#16A34A]'
                 }`}
               />
               <span className="font-mono">
-                {config.runtimeMode === 'custom_endpoint'
-                  ? t.agent.activeCustomModel(config.llmModel || 'Custom LLM')
-                  : t.agent.activeLocalRouter}
+                {isCliMode
+                  ? `${AGENT_PROVIDER_META[activeMode].label}${
+                      agentStatus.settings.providers[activeMode as 'claude' | 'codex' | 'dsh']?.model
+                        ? ` · ${agentStatus.settings.providers[activeMode as 'claude' | 'codex' | 'dsh'].model}`
+                        : ''
+                    }`
+                  : config.runtimeMode === 'custom_endpoint'
+                    ? t.agent.activeCustomModel(config.llmModel || 'Custom LLM')
+                    : t.agent.activeLocalRouter}
               </span>
               <SlidersHorizontal className="h-3 w-3 opacity-70" />
             </button>
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+interface AgentTraceDrawerProps {
+  lang: AppLanguage;
+  thinking?: string;
+  toolSteps?: AgentToolStep[];
+  isStreaming: boolean;
+}
+
+function AgentTraceDrawer({ lang, thinking, toolSteps = [], isStreaming }: AgentTraceDrawerProps) {
+  const t = TRANSLATIONS[lang];
+  const [expanded, setExpanded] = useState(false);
+  const runningCount = toolSteps.filter((s) => s.status === 'running').length;
+  const totalCount = toolSteps.length + (thinking ? 1 : 0);
+
+  return (
+    <div className="mt-2.5 overflow-hidden rounded-control border border-[#E5E7EB] bg-white">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[12px] font-medium text-[#475569] hover:bg-[#F8F9FA]"
+      >
+        <div className="flex items-center gap-2">
+          {isStreaming && runningCount > 0 ? (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-[#2563EB]" />
+          ) : (
+            <Wrench className="h-3.5 w-3.5 shrink-0 text-[#64748B]" />
+          )}
+          <span>{t.agent.thinkingAndTools(totalCount)}</span>
+        </div>
+        {expanded ? (
+          <ChevronDown className="h-3.5 w-3.5 text-[#94A3B8]" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 text-[#94A3B8]" />
+        )}
+      </button>
+
+      {expanded && (
+        <div className="space-y-2 border-t border-[#E5E7EB] bg-[#F8F9FA] p-3">
+          {thinking && (
+            <div className="rounded-inner border border-[#E5E7EB] bg-white px-2.5 py-2">
+              <div className="mb-1 text-[11px] font-medium text-[#64748B]">
+                {t.agent.thinkingTitle}
+              </div>
+              <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-[#475569]">
+                {thinking.trim()}
+              </pre>
+            </div>
+          )}
+
+          {toolSteps.map((step) => (
+            <div
+              key={step.id}
+              className="rounded-inner border border-[#E5E7EB] bg-white px-2.5 py-2 text-[12px]"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  {step.status === 'running' ? (
+                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-[#2563EB]" />
+                  ) : step.status === 'error' ? (
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0 text-[#DC2626]" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5 shrink-0 text-[#16A34A]" />
+                  )}
+                  <span className="truncate font-mono font-medium text-[#0F172A]">{step.name}</span>
+                </div>
+              </div>
+              {step.input && (
+                <div className="mt-1 truncate font-mono text-[11px] text-[#64748B]" title={step.input}>
+                  {step.input}
+                </div>
+              )}
+              {step.output && (
+                <pre className="mt-1.5 max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded bg-[#F8F9FA] p-2 font-mono text-[11px] text-[#334155]">
+                  {step.output}
+                </pre>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

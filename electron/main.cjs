@@ -7,11 +7,13 @@ const https = require('node:https');
 const { startLocalEngine } = require('./localEngine.cjs');
 const { createTdmDockManager } = require('./tdmDockManager.cjs');
 const { createWhisperManager } = require('./whisperManager.cjs');
+const { createAgentRunner } = require('./agentRunner.cjs');
 
 let mainWindow = null;
 let localEngine = null;
 let tdmDockManager = null;
 let whisperManager = null;
+let agentRunner = null;
 let isQuitting = false;
 
 const gotLock = app.requestSingleInstanceLock();
@@ -225,6 +227,30 @@ function registerWhisperIpcHandlers() {
   );
 }
 
+function registerAgentIpcHandlers() {
+  ipcMain.handle('agent:status', () =>
+    agentRunner ? agentRunner.getStatus() : { supported: false }
+  );
+  ipcMain.handle('agent:save-settings', (_e, patch) =>
+    agentRunner ? agentRunner.saveSettings(patch) : { ok: false }
+  );
+  ipcMain.handle('agent:import-claudian', (_e, customPath) =>
+    agentRunner ? agentRunner.importClaudianConfig(customPath) : { ok: false }
+  );
+  ipcMain.handle('agent:pick-workspace', () =>
+    agentRunner ? agentRunner.pickWorkspace() : { ok: false, canceled: true }
+  );
+  ipcMain.handle('agent:pick-cli', (_e, provider) =>
+    agentRunner ? agentRunner.pickCliExe(provider) : { ok: false, canceled: true }
+  );
+  ipcMain.handle('agent:send', (_e, payload) =>
+    agentRunner ? agentRunner.sendMessage(payload) : { ok: false }
+  );
+  ipcMain.handle('agent:stop', (_e, runId) =>
+    agentRunner ? agentRunner.stopRun(runId) : { ok: false }
+  );
+}
+
 app.whenReady().then(() => {
   // Start local health & GitHub self-updater backend (127.0.0.1:17890)
   localEngine = startLocalEngine({
@@ -245,6 +271,12 @@ app.whenReady().then(() => {
   createWindow();
   registerTdmIpcHandlers();
   registerWhisperIpcHandlers();
+  registerAgentIpcHandlers();
+
+  agentRunner = createAgentRunner({
+    mainWindow,
+    dialog,
+  });
 
   tdmDockManager = createTdmDockManager({
     mainWindow,
@@ -280,6 +312,12 @@ app.on('before-quit', async (event) => {
   isQuitting = true;
   event.preventDefault();
 
+  if (agentRunner) {
+    try {
+      await agentRunner.shutdown();
+    } catch {}
+    agentRunner = null;
+  }
   if (whisperManager) {
     try {
       await whisperManager.shutdown();
