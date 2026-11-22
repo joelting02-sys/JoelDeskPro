@@ -538,12 +538,24 @@ export function extractCleanUrl(rawText: string): {
     return { cleanUrl: null, hadNoise: false, fileName: '' };
   }
 
-  const match = rawText.match(/https?:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+/i);
-  if (!match) {
+  let matchedRawUrl: string | null = null;
+  const httpMatch = rawText.match(/https?:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+/i);
+  if (httpMatch) {
+    matchedRawUrl = httpMatch[0];
+  } else {
+    const bareMatch = rawText.match(
+      /(?<![A-Za-z0-9.\-_/@])((?:v\.douyin\.com|www\.douyin\.com|iesdouyin\.com|vt\.tiktok\.com|vm\.tiktok\.com|www\.tiktok\.com|b23\.tv|www\.bilibili\.com|xhslink\.com|youtu\.be|www\.youtube\.com)\/[A-Za-z0-9_\-/?=&.%]+)/i
+    );
+    if (bareMatch?.[1]) {
+      matchedRawUrl = `https://${bareMatch[1]}`;
+    }
+  }
+
+  if (!matchedRawUrl) {
     return { cleanUrl: null, hadNoise: false, fileName: '' };
   }
 
-  let cleanUrl = match[0].replace(/[),.;!?'"\]]+$/g, '');
+  const cleanUrl = matchedRawUrl.replace(/[),.;!?'"\]】）》」，。！？、]+$/g, '');
   const trimmedRaw = rawText.trim();
   const hadNoise = trimmedRaw !== cleanUrl;
 
@@ -564,6 +576,44 @@ export function extractCleanUrl(rawText: string): {
   }
 
   return { cleanUrl, hadNoise, fileName };
+}
+
+export type DeskProToolName = 'download' | 'transcribe' | 'convert' | 'open';
+
+export interface ParsedDeskProToolCall {
+  tool: DeskProToolName;
+  args: Record<string, unknown>;
+}
+
+export function stripDeskProToolTags(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/\[\[TOOL:[a-z_]+\|[\s\S]*?\]\]/gi, '')
+    .replace(/\n?\[\[(?:T(?:O(?:O(?:L(?::[^\]]*)?)?)?)?)?$/i, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+export function parseDeskProToolCall(text: string): ParsedDeskProToolCall | null {
+  if (!text) return null;
+  const regex = /\[\[TOOL:(download|transcribe|convert|open)\|(\{[\s\S]*?\})\]\]/gi;
+  let lastMatch: RegExpExecArray | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(text)) !== null) {
+    lastMatch = match;
+  }
+  if (!lastMatch) return null;
+
+  const tool = lastMatch[1].toLowerCase() as DeskProToolName;
+  try {
+    const parsedArgs = JSON.parse(lastMatch[2]) as unknown;
+    if (parsedArgs && typeof parsedArgs === 'object' && !Array.isArray(parsedArgs)) {
+      return { tool, args: parsedArgs as Record<string, unknown> };
+    }
+  } catch {
+    return null;
+  }
+  return { tool, args: {} };
 }
 
 function inferRequestedTargetFormat(text: string, sourceFormat: DocumentFormat): DocumentFormat {

@@ -41,6 +41,7 @@ import {
   getComputeProviders,
   getFileExtension,
   getWhisperPresets,
+  stripDeskProToolTags,
 } from '../services/toolkitAdapter';
 import { AppLanguage, TRANSLATIONS } from '../i18n';
 import { BrandLogo } from './BrandLogo';
@@ -164,81 +165,6 @@ export function AgentView({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* Simple Magpie Model Channel Bar */}
-      {magpieStatus.supported && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E5E7EB] bg-white px-5 py-2 sm:px-8">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            {isMagpieActive ? (
-              <>
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-inner px-2.5 py-1 text-[12px] font-medium whitespace-nowrap ${
-                    magpieStatus.online
-                      ? 'bg-[#F0FDF4] text-[#15803D]'
-                      : 'bg-[#FEF3C7] text-[#B45309]'
-                  }`}
-                >
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      magpieStatus.online ? 'bg-[#16A34A]' : 'bg-[#D97706]'
-                    }`}
-                  />
-                  {magpieStatus.online ? t.agent.magpieConnected : t.agent.magpieDisconnected}
-                </span>
-
-                {magpieStatus.models.length > 0 && (
-                  <select
-                    value={currentMagpieModel}
-                    disabled={isSending}
-                    onChange={(e) => onSelectMagpieModel(e.target.value)}
-                    aria-label={t.settings.magpieModelLabel}
-                    className="h-7 max-w-[280px] rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-2.5 font-mono text-[12px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none disabled:opacity-60"
-                  >
-                    {!magpieStatus.models.some((m) => m.id === currentMagpieModel) &&
-                      currentMagpieModel && (
-                        <option value={currentMagpieModel}>{currentMagpieModel}</option>
-                      )}
-                    {magpieStatus.models.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.id}
-                      </option>
-                    ))}
-                  </select>
-                )}
-
-                <button
-                  type="button"
-                  disabled={refreshingModels || isSending}
-                  onClick={handleRefresh}
-                  title={t.agent.refreshModels}
-                  aria-label={t.agent.refreshModels}
-                  className="flex h-7 w-7 items-center justify-center rounded-control border border-[#E5E7EB] bg-[#F8F9FA] text-[#64748B] hover:border-[#2563EB] hover:bg-white hover:text-[#2563EB] disabled:opacity-50"
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${refreshingModels ? 'animate-spin' : ''}`} />
-                </button>
-              </>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-inner bg-[#EFF6FF] px-2.5 py-1 text-[12px] font-medium text-[#1D4ED8]">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB]" />
-                {config.runtimeMode === 'custom_endpoint'
-                  ? `${t.agent.customApiLabel} · ${config.llmModel || 'Custom'}`
-                  : t.agent.activeLocalRouter}
-              </span>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => onNavigateView('settings')}
-            title={t.agent.settingsLink}
-            aria-label={t.agent.settingsLink}
-            className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-2.5 py-1 text-[11px] font-medium text-[#475569] hover:border-[#CBD5E1] hover:bg-white hover:text-[#0F172A] whitespace-nowrap"
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            <span>{t.agent.settingsLink}</span>
-          </button>
-        </div>
-      )}
-
       {/* Full-pane Drag & Drop Overlay */}
       {isDragging && (
         <div className="pointer-events-none absolute inset-4 z-30 flex items-center justify-center rounded-panel border-2 border-dashed border-[#2563EB] bg-white/92">
@@ -320,14 +246,18 @@ export function AgentView({
                       <ThinkingDrawer lang={lang} thinking={msg.thinking} />
                     )}
 
-                    {(msg.content || msg.isStreaming) && (
-                      <div className="mt-2 whitespace-pre-wrap break-words text-[14px] leading-relaxed text-[#1E293B]">
-                        {msg.content}
-                        {msg.isStreaming && (
-                          <span className="ml-1 inline-block h-3.5 w-1.5 animate-pulse bg-[#2563EB] align-middle" />
-                        )}
-                      </div>
-                    )}
+                    {(() => {
+                      const visibleContent = stripDeskProToolTags(msg.content);
+                      if (!visibleContent && !msg.isStreaming) return null;
+                      return (
+                        <div className="mt-2 whitespace-pre-wrap break-words text-[14px] leading-relaxed text-[#1E293B]">
+                          {visibleContent}
+                          {msg.isStreaming && (
+                            <span className="ml-1 inline-block h-3.5 w-1.5 animate-pulse bg-[#2563EB] align-middle" />
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {msg.error && (
                       <div className="mt-2.5 flex items-start gap-2 rounded-control border border-[#FECACA] bg-[#FEF2F2] px-3.5 py-2.5 text-[12px] text-[#B91C1C]">
@@ -483,31 +413,80 @@ export function AgentView({
             )}
           </div>
 
-          <div className="mt-2 flex items-center justify-between text-[11px] text-[#64748B]">
+          {/* Bottom Model Picker & Channel Controls */}
+          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-[11.5px] text-[#64748B]">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              {isMagpieActive ? (
+                <>
+                  <span
+                    title={
+                      magpieStatus.online
+                        ? t.agent.magpieConnected
+                        : t.agent.magpieDisconnected
+                    }
+                    className={`h-2 w-2 shrink-0 rounded-full ${
+                      magpieStatus.online ? 'bg-[#16A34A]' : 'bg-[#D97706]'
+                    }`}
+                  />
+                  {magpieStatus.models.length > 0 ? (
+                    <select
+                      value={currentMagpieModel}
+                      disabled={isSending}
+                      onChange={(e) => onSelectMagpieModel(e.target.value)}
+                      aria-label={t.settings.magpieModelLabel}
+                      className="h-7 max-w-[260px] rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-2 font-mono text-[11.5px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none disabled:opacity-60"
+                    >
+                      {!magpieStatus.models.some((m) => m.id === currentMagpieModel) &&
+                        currentMagpieModel && (
+                          <option value={currentMagpieModel}>{currentMagpieModel}</option>
+                        )}
+                      {magpieStatus.models.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.id}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="font-mono text-[11.5px] text-[#B45309]">
+                      {t.agent.magpieDisconnected}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    disabled={refreshingModels || isSending}
+                    onClick={handleRefresh}
+                    title={t.agent.refreshModels}
+                    aria-label={t.agent.refreshModels}
+                    className="flex h-7 w-7 items-center justify-center rounded-control border border-[#E5E7EB] bg-[#F8F9FA] text-[#64748B] hover:border-[#2563EB] hover:bg-white hover:text-[#2563EB] disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${refreshingModels ? 'animate-spin' : ''}`} />
+                  </button>
+                </>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-inner bg-[#EFF6FF] px-2 py-0.5 text-[11.5px] font-medium text-[#1D4ED8]">
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      config.runtimeMode === 'custom_endpoint' ? 'bg-[#2563EB]' : 'bg-[#16A34A]'
+                    }`}
+                  />
+                  <span className="font-mono">
+                    {config.runtimeMode === 'custom_endpoint'
+                      ? t.agent.activeCustomModel(config.llmModel || 'Custom LLM')
+                      : t.agent.activeLocalRouter}
+                  </span>
+                </span>
+              )}
+            </div>
+
             <button
               type="button"
               onClick={() => onNavigateView('settings')}
-              className="inline-flex items-center gap-1.5 rounded-inner px-2 py-0.5 hover:bg-[#F3F4F6] hover:text-[#0F172A] transition-colors"
+              title={t.agent.settingsLink}
+              aria-label={t.agent.settingsLink}
+              className="inline-flex h-7 items-center gap-1 rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-2.5 text-[11px] font-medium text-[#475569] hover:border-[#CBD5E1] hover:bg-white hover:text-[#0F172A] whitespace-nowrap"
             >
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  isMagpieActive
-                    ? magpieStatus.online
-                      ? 'bg-[#16A34A]'
-                      : 'bg-[#D97706]'
-                    : config.runtimeMode === 'custom_endpoint'
-                      ? 'bg-[#2563EB]'
-                      : 'bg-[#16A34A]'
-                }`}
-              />
-              <span className="font-mono">
-                {isMagpieActive
-                  ? `Magpie · ${currentMagpieModel || t.agent.magpieDisconnected}`
-                  : config.runtimeMode === 'custom_endpoint'
-                    ? t.agent.activeCustomModel(config.llmModel || 'Custom LLM')
-                    : t.agent.activeLocalRouter}
-              </span>
-              <SlidersHorizontal className="h-3 w-3 opacity-70" />
+              <SlidersHorizontal className="h-3 w-3 opacity-80" />
+              <span>{t.agent.settingsLink}</span>
             </button>
           </div>
         </form>

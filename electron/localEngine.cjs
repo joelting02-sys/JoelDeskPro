@@ -11,40 +11,10 @@ const { promisify } = require('node:util');
 const execFileAsync = promisify(execFile);
 
 /**
- * Detects Chrome's currently configured default download directory on the user's machine.
- * Used when saving downloaded GitHub Release installers.
+ * Returns the OS default Downloads directory (never Desktop).
+ * Kept for backwards-compatible module exports.
  */
 function detectChromeDefaultDownloadDir() {
-  const candidates = [];
-  if (process.platform === 'win32') {
-    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-    candidates.push(
-      path.join(localAppData, 'Google', 'Chrome', 'User Data', 'Default', 'Preferences'),
-      path.join(localAppData, 'Microsoft', 'Edge', 'User Data', 'Default', 'Preferences')
-    );
-  } else if (process.platform === 'darwin') {
-    candidates.push(
-      path.join(os.homedir(), 'Library', 'Application Support', 'Google', 'Chrome', 'Default', 'Preferences')
-    );
-  } else {
-    candidates.push(
-      path.join(os.homedir(), '.config', 'google-chrome', 'Default', 'Preferences'),
-      path.join(os.homedir(), '.config', 'chromium', 'Default', 'Preferences')
-    );
-  }
-
-  for (const prefPath of candidates) {
-    try {
-      if (!fsSync.existsSync(prefPath)) continue;
-      const raw = fsSync.readFileSync(prefPath, 'utf8');
-      const prefs = JSON.parse(raw);
-      const chromeDir = prefs?.download?.default_directory || prefs?.savefile?.default_directory;
-      if (typeof chromeDir === 'string' && chromeDir.trim()) {
-        return chromeDir.trim();
-      }
-    } catch {}
-  }
-
   return path.join(os.homedir(), 'Downloads');
 }
 
@@ -55,6 +25,10 @@ function startLocalEngine(options = {}) {
     [TOKEN, 'joeldeskpro-local-bridge', 'deskkit-local-bridge'].filter(Boolean)
   );
   const IS_PACKAGED = Boolean(options.isPackaged);
+  const DOWNLOADS_DIR =
+    typeof options.downloadsDir === 'string' && options.downloadsDir.trim()
+      ? options.downloadsDir.trim()
+      : path.join(os.homedir(), 'Downloads');
   const onLaunchInstaller =
     typeof options.onLaunchInstaller === 'function' ? options.onLaunchInstaller : null;
 
@@ -118,7 +92,7 @@ function startLocalEngine(options = {}) {
       );
     }
 
-    const saveDir = detectChromeDefaultDownloadDir();
+    const saveDir = DOWNLOADS_DIR;
     await fs.mkdir(saveDir, { recursive: true });
     const fileName = sanitizeName(preferred.name);
     const destPath = path.join(saveDir, fileName);

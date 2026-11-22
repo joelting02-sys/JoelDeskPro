@@ -122,6 +122,14 @@ async function sha256OfFile(filePath) {
   return hash.digest('hex').toUpperCase();
 }
 
+function getDefaultDownloadsDir() {
+  try {
+    return app.getPath('downloads');
+  } catch {
+    return path.join(os.homedir(), 'Downloads');
+  }
+}
+
 async function downloadTdmInstaller() {
   const apiUrl = `https://api.github.com/repos/${TDM_INSTALLER.owner}/${TDM_INSTALLER.repo}/releases/tags/${TDM_INSTALLER.tag}`;
   const response = await fetch(apiUrl, { headers: { 'User-Agent': 'JoelDeskPro', Accept: 'application/vnd.github+json' } });
@@ -130,7 +138,7 @@ async function downloadTdmInstaller() {
   const asset = Array.isArray(release.assets) ? release.assets.find((item) => item.name === TDM_INSTALLER.asset) : null;
   if (!asset || !Number.isSafeInteger(asset.size) || asset.size <= 0) throw new Error('JoelFast package not found on GitHub');
 
-  const destinationDir = path.join(os.homedir(), 'Downloads');
+  const destinationDir = getDefaultDownloadsDir();
   await fs.mkdir(destinationDir, { recursive: true });
   const destination = path.join(destinationDir, TDM_INSTALLER.asset);
   const partial = `${destination}.${crypto.randomUUID()}.download`;
@@ -247,6 +255,7 @@ app.whenReady().then(() => {
   localEngine = startLocalEngine({
     port: 17890,
     isPackaged: app.isPackaged,
+    downloadsDir: getDefaultDownloadsDir(),
     onLaunchInstaller: async (installerPath, isPortable) => {
       if (isPortable) {
         shell.showItemInFolder(installerPath);

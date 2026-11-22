@@ -30,11 +30,15 @@ import {
   DEFAULT_ENDPOINT_CONFIG,
   callCustomLlmEndpoint,
   detectDocumentFormat,
+  extractCleanUrl,
   formatBytes,
+  getRecommendedTargetFormat,
   loadSavedLlmConfig,
   nowTimeLabel,
   parseAgentIntent,
+  parseDeskProToolCall,
   saveLlmConfigToStorage,
+  stripDeskProToolTags,
 } from './services/toolkitAdapter';
 import {
   INITIAL_TDM_STATUS,
@@ -57,6 +61,42 @@ import {
   triggerLocalClientUpdate,
 } from './services/githubUpdater';
 import { AppLanguage, TRANSLATIONS, getInitialLanguage, saveLanguage } from './i18n';
+
+const VALID_DOCUMENT_FORMATS = new Set<DocumentFormat>([
+  'pdf',
+  'docx',
+  'md',
+  'png',
+  'txt',
+  'mp4',
+  'mkv',
+  'mov',
+  'webm',
+  'gif',
+  'mp3',
+  'wav',
+  'm4a',
+  'flac',
+  'ogg',
+]);
+
+function normalizeHttpUrl(rawUrl: string): string | null {
+  const cleaned = extractCleanUrl(rawUrl).cleanUrl || rawUrl.trim();
+  if (!cleaned) return null;
+  const candidate = /^https?:\/\//i.test(cleaned)
+    ? cleaned
+    : /^[a-z0-9.-]+\.[a-z]{2,}\//i.test(cleaned)
+      ? `https://${cleaned}`
+      : '';
+  if (!candidate) return null;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.toString();
+    }
+  } catch {}
+  return null;
+}
 
 export default function App() {
   const [lang, setLang] = useState<AppLanguage>(() => getInitialLanguage());
@@ -106,7 +146,21 @@ export default function App() {
   const lastDownloadBoundsRef = useRef<TdmBounds | undefined>(undefined);
   const whisperIframeRef = useRef<HTMLIFrameElement>(null);
   const diskLlmSyncedRef = useRef(false);
-  const activeRunRef = useRef<{ runId: string; messageId: string } | null>(null);
+  const activeRunRef = useRef<{
+    runId: string;
+    messageId: string;
+    rawText: string;
+    attachments: AttachedFileItem[];
+    accumulatedText: string;
+    fallbackWhisperDefaults?: {
+      provider: ComputeProvider;
+      preset: WhisperPresetId;
+      language: TranscriptLanguage;
+    };
+  } | null>(null);
+  const handleDispatchAgentActionRef = useRef<
+    (messageId: string, action: AgentActionPayload) => Promise<void>
+  >(async () => {});
 
   const t = TRANSLATIONS[lang];
 
@@ -267,6 +321,7 @@ export default function App() {
       if (!currentRun || (evt.runId && evt.runId !== currentRun.runId)) return;
 
       if (evt.type === 'text-delta' && typeof evt.text === 'string') {
+        currentRun.accumulatedText += evt.text;
         setMessages((prev) =>
           prev.map((m) =>
             m.id === currentRun.messageId ? { ...m, content: `${m.content}${evt.text}` } : m
@@ -287,11 +342,111 @@ export default function App() {
       }
 
       if (evt.type === 'done') {
+        const cleanedContent = stripDeskProToolTags(currentRun.accumulatedText);
+        const toolCall =
+          !evt.aborted && !evt.error ? parseDeskProToolCall(currentRun.accumulatedText) : null;
+
+        let resolvedAction: AgentActionPayload | undefined;
+        let viewToOpen: WorkspaceView | null = null;
+        let dropMediaToast = false;
+
+        if (toolCall?.tool === 'download') {
+          const urlCandidate =
+            typeof toolCall.args.url === 'string' && toolCall.args.url.trim()
+              ? toolCall.args.url.trim()
+              : currentRun.rawText;
+          const cleanUrl = normalizeHttpUrl(urlCandidate) || normalizeHttpUrl(currentRun.rawText);
+          if (cleanUrl) {
+            const urlMeta = extractCleanUrl(cleanUrl);
+            const rawFileName =
+              typeof toolCall.args.filename === 'string' ? toolCall.args.filename.trim() : '';
+            resolvedAction = {
+              type: 'download',
+              rawInput: currentRun.rawText,
+              cleanUrl,
+              fileName: rawFileName || urlMeta.fileName,
+            };
+          }
+        } else if (toolCall?.tool === 'transcribe') {
+          const mediaAttachment = currentRun.attachments.find(
+            (f) => f.category === 'video' || f.category === 'audio'
+          );
+          if (mediaAttachment) {
+            const presetArg =
+              toolCall.args.preset === 'fast' ||
+              toolCall.args.preset === 'balanced' ||
+              toolCall.args.preset === 'accurate'
+                ? toolCall.args.preset
+                : currentRun.fallbackWhisperDefaults?.preset || 'balanced';
+            const languageArg =
+              toolCall.args.language === 'auto' ||
+              toolCall.args.language === 'zh' ||
+              toolCall.args.language === 'en'
+                ? toolCall.args.language
+                : currentRun.fallbackWhisperDefaults?.language || 'auto';
+            const isVideo = mediaAttachment.category === 'video';
+            resolvedAction = {
+              type: 'transcribe',
+              fileName: mediaAttachment.name,
+              fileSizeBytes: mediaAttachment.size,
+              mediaKind: isVideo ? 'video' : 'audio',
+              needsAudioExtract: isVideo,
+              provider: currentRun.fallbackWhisperDefaults?.provider || 'colab-t4',
+              preset: presetArg,
+              outputFormat: 'srt',
+              language: languageArg,
+              rawFile: mediaAttachment.rawFile,
+            };
+          } else {
+            viewToOpen = 'transcribe';
+            dropMediaToast = true;
+          }
+        } else if (toolCall?.tool === 'convert') {
+          const docAttachment =
+            currentRun.attachments.find((f) => f.category === 'document') ||
+            currentRun.attachments[0];
+          if (docAttachment) {
+            const sourceFormat = detectDocumentFormat(docAttachment.name);
+            const rawTarget =
+              typeof toolCall.args.target === 'string'
+                ? (toolCall.args.target.trim().toLowerCase() as DocumentFormat)
+                : undefined;
+            const targetFormat =
+              rawTarget && VALID_DOCUMENT_FORMATS.has(rawTarget)
+                ? rawTarget
+                : getRecommendedTargetFormat(sourceFormat);
+            resolvedAction = {
+              type: 'convert',
+              fileName: docAttachment.name,
+              fileSizeBytes: docAttachment.size,
+              sourceFormat,
+              targetFormat,
+            };
+          } else {
+            viewToOpen = 'convert';
+          }
+        } else if (toolCall?.tool === 'open') {
+          const rawView = typeof toolCall.args.view === 'string' ? toolCall.args.view.trim() : '';
+          if (
+            rawView === 'download' ||
+            rawView === 'transcribe' ||
+            rawView === 'convert' ||
+            rawView === 'settings'
+          ) {
+            viewToOpen = rawView;
+          }
+        }
+
+        const runMessageId = currentRun.messageId;
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === currentRun.messageId
+            m.id === runMessageId
               ? {
                   ...m,
+                  content: currentRun.accumulatedText
+                    ? cleanedContent
+                    : stripDeskProToolTags(m.content),
+                  action: resolvedAction ?? m.action,
                   isStreaming: false,
                   error: evt.error || m.error,
                 }
@@ -300,6 +455,15 @@ export default function App() {
         );
         activeRunRef.current = null;
         setAgentSending(false);
+
+        if (resolvedAction) {
+          void handleDispatchAgentActionRef.current(runMessageId, resolvedAction);
+        } else if (viewToOpen) {
+          setActiveView(viewToOpen);
+          if (dropMediaToast) {
+            showToast(TRANSLATIONS[langRef.current].toasts.whisperDropFilePrompt, 'neutral');
+          }
+        }
       }
     });
 
@@ -741,8 +905,11 @@ export default function App() {
 
       const historyMessages = messages
         .slice(-16)
-        .filter((m) => typeof m.content === 'string' && m.content.trim())
-        .map((m) => ({ role: m.role, content: m.content }));
+        .map((m) => ({
+          role: m.role,
+          content: m.role === 'assistant' ? stripDeskProToolTags(m.content) : m.content.trim(),
+        }))
+        .filter((m) => m.content.length > 0);
       historyMessages.push({ role: 'user', content: effectivePrompt });
 
       const assistantMsg: AgentMessage = {
@@ -756,7 +923,18 @@ export default function App() {
         isStreaming: true,
       };
 
-      activeRunRef.current = { runId, messageId: assistantMsgId };
+      activeRunRef.current = {
+        runId,
+        messageId: assistantMsgId,
+        rawText: text,
+        attachments,
+        accumulatedText: '',
+        fallbackWhisperDefaults: {
+          provider: syncedProvider,
+          preset: syncedPreset,
+          language: syncedLanguage,
+        },
+      };
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
       setAgentSending(true);
 
@@ -965,6 +1143,8 @@ export default function App() {
       dispatchedTaskId: taskId,
     }));
   };
+
+  handleDispatchAgentActionRef.current = handleDispatchAgentAction;
 
   const activeCounts = {
     transcribe: whisperStatus.pendingTasks,

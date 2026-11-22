@@ -7,6 +7,16 @@ const SETTINGS_FILE = path.join(os.homedir(), '.joeldeskpro', 'magpie-settings.j
 const DEFAULT_BASE_URL = 'http://127.0.0.1:3425';
 const DEFAULT_API_KEY = 'magpie';
 
+const DESKPRO_AGENT_GUIDE = [
+  'You are Joel Desk Pro assistant. Be concise.',
+  'Desktop tools (put ONLY on the LAST line when needed):',
+  '- Download clean URL from messy text: [[TOOL:download|{"url":"https://...","filename":"optional.mp4"}]]',
+  '- Transcribe attached media: [[TOOL:transcribe|{"preset":"fast|balanced|accurate","language":"auto|zh|en"}]]',
+  '- Convert attached file: [[TOOL:convert|{"target":"pdf|docx|md|png|txt|mp4|mp3|wav"}]]',
+  '- Open tab: [[TOOL:open|{"view":"download|transcribe|convert|settings"}]]',
+  'Normal chat -> no [[TOOL:...]].',
+].join('\n');
+
 function createDefaultSettings() {
   return {
     mode: 'magpie',
@@ -219,13 +229,13 @@ function createMagpieChannel({ mainWindow } = {}) {
       return { ok: false, error: '未选择可用模型，请点击刷新模型列表' };
     }
 
-    const sysPrompt =
+    const customSysPrompt =
       typeof reqSystemPrompt === 'string' ? reqSystemPrompt.trim() : settings.systemPrompt.trim();
+    const combinedSysPrompt = customSysPrompt
+      ? `${DESKPRO_AGENT_GUIDE}\n\n${customSysPrompt}`
+      : DESKPRO_AGENT_GUIDE;
 
-    const apiMessages = [];
-    if (sysPrompt) {
-      apiMessages.push({ role: 'system', content: sysPrompt });
-    }
+    const apiMessages = [{ role: 'system', content: combinedSysPrompt }];
     for (const msg of messages) {
       if (!msg || typeof msg.content !== 'string' || !msg.content.trim()) continue;
       const role = msg.role === 'assistant' ? 'assistant' : 'user';
@@ -385,4 +395,5 @@ module.exports = {
   createMagpieChannel,
   buildV1Base,
   fetchModels,
+  DESKPRO_AGENT_GUIDE,
 };
