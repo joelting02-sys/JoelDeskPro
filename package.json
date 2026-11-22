@@ -1,7 +1,7 @@
 ﻿{
   "name": "joel-desk-pro",
   "private": true,
-  "version": "1.4.6",
+  "version": "1.4.7",
   "description": "Joel Desk Pro 鈥?AI Agent & Personal Productivity Workbench",
   "main": "electron/main.cjs",
   "type": "module",

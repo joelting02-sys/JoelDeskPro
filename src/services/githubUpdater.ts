@@ -1,9 +1,31 @@
 // GitHub real-time update checker & local client updater for joelting02-sys/JoelDeskPro
 import { AppLanguage } from '../i18n';
 
-export const APP_VERSION = '1.3.0';
+declare const __APP_VERSION__: string | undefined;
+
+export const APP_VERSION =
+  typeof __APP_VERSION__ !== 'undefined' && __APP_VERSION__ ? __APP_VERSION__ : '1.4.7';
 export const DEFAULT_GITHUB_REPO = 'joelting02-sys/JoelDeskPro';
 export const DEFAULT_GITHUB_BRANCH = 'main';
+
+export function compareSemver(a: string, b: string): number {
+  const parse = (v: string) =>
+    v
+      .trim()
+      .replace(/^v/i, '')
+      .split('-')[0]
+      .split('.')
+      .map((n) => Number.parseInt(n, 10) || 0);
+  const pa = parse(a);
+  const pb = parse(b);
+  const len = Math.max(pa.length, pb.length, 3);
+  for (let i = 0; i < len; i += 1) {
+    const va = pa[i] || 0;
+    const vb = pb[i] || 0;
+    if (va !== vb) return va > vb ? 1 : -1;
+  }
+  return 0;
+}
 
 const STORAGE_SYNCED_SHA_KEY = 'joeldeskpro_synced_commit_sha';
 
@@ -143,7 +165,9 @@ export async function checkGitHubUpdate(
 
   const latestSha = commitData.sha || '';
   const syncedSha = getSyncedCommitSha();
-  const hasUpdate = Boolean(latestSha && (!syncedSha || syncedSha !== latestSha));
+  const hasUpdate = releaseTag
+    ? compareSemver(releaseTag, APP_VERSION) > 0
+    : Boolean(latestSha && (!syncedSha || syncedSha !== latestSha));
   const rawMessage = (commitData.commit?.message || (isZh ? '最新代码提交' : 'Latest commit'))
     .split('\n')[0]
     .trim();

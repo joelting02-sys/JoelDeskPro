@@ -46,43 +46,28 @@ export interface AttachedFileItem {
   localPath?: string;
 }
 
-export type CliAgentProvider = 'claude' | 'codex' | 'dsh';
-export type AgentBackendMode = CliAgentProvider | 'custom_endpoint';
-export type AgentPermissionMode = 'turbo' | 'normal';
-
-export interface AgentToolStep {
+export interface MagpieModelItem {
   id: string;
-  name: string;
-  input?: string;
-  output?: string;
-  status: 'running' | 'done' | 'error';
+  ownedBy?: string;
 }
 
-export interface AgentProviderConfig {
-  cliPath: string;
+export type MagpieChannelMode = 'magpie' | 'custom_endpoint';
+
+export interface MagpieSettings {
+  mode: MagpieChannelMode;
+  baseUrl: string;
+  apiKey: string;
   model: string;
-  envVars: string;
-}
-
-export interface AgentSettings {
-  activeProvider: AgentBackendMode;
-  permissionMode: AgentPermissionMode;
-  workspaceDir: string;
-  sharedEnv: string;
   systemPrompt: string;
-  providers: Record<CliAgentProvider, AgentProviderConfig>;
 }
 
-export type AgentCliProbe = Record<
-  CliAgentProvider,
-  { installed: boolean; resolvedPath: string }
->;
-
-export interface AgentRunnerStatus {
+export interface MagpieStatus {
   supported: boolean;
-  settings: AgentSettings;
-  probes: AgentCliProbe;
-  activeRunId: string | null;
+  online: boolean;
+  models: MagpieModelItem[];
+  latencyMs?: number;
+  error?: string;
+  settings: MagpieSettings;
 }
 
 export type AgentActionPayload =
@@ -122,10 +107,8 @@ export interface AgentMessage {
   attachments?: AttachedFileItem[];
   action?: AgentActionPayload;
   timestamp: string;
-  provider?: AgentBackendMode;
   model?: string;
   thinking?: string;
-  toolSteps?: AgentToolStep[];
   isStreaming?: boolean;
   error?: string;
 }

@@ -12,28 +12,23 @@ import {
   FileOutput,
   FileText,
   Film,
-  FolderOpen,
   Link2,
   Loader2,
   Paperclip,
-  ShieldCheck,
+  RefreshCw,
   SlidersHorizontal,
+  Sparkles,
   Square,
-  Terminal,
-  Wrench,
   X,
-  Zap,
 } from 'lucide-react';
 import {
   AgentActionPayload,
-  AgentBackendMode,
   AgentMessage,
-  AgentRunnerStatus,
-  AgentToolStep,
   AttachedFileItem,
   ComputeProvider,
   DocumentFormat,
   EndpointConfig,
+  MagpieStatus,
   WhisperPresetId,
   WorkspaceView,
 } from '../types/toolkit';
@@ -47,15 +42,13 @@ import {
   getFileExtension,
   getWhisperPresets,
 } from '../services/toolkitAdapter';
-import { AGENT_PROVIDER_META } from '../services/agentBridge';
 import { AppLanguage, TRANSLATIONS } from '../i18n';
 import { BrandLogo } from './BrandLogo';
 
 interface AgentViewProps {
   lang: AppLanguage;
   config: EndpointConfig;
-  agentStatus: AgentRunnerStatus;
-  activeSessionId: string | null;
+  magpieStatus: MagpieStatus;
   isSending?: boolean;
   messages: AgentMessage[];
   onSendMessage: (text: string, attachments: AttachedFileItem[]) => void;
@@ -63,19 +56,15 @@ interface AgentViewProps {
   onDispatchAction: (messageId: string, action: AgentActionPayload) => void;
   onNavigateView: (view: WorkspaceView) => void;
   onCopyText: (text: string, label: string) => void;
-  onChangeProvider: (provider: AgentBackendMode) => void;
-  onTogglePermissionMode: () => void;
-  onPickWorkspace: () => void;
+  onSelectMagpieModel: (model: string) => void;
+  onRefreshMagpie: () => Promise<void>;
   onStopRun: () => void;
 }
-
-const PROVIDER_PILLS: AgentBackendMode[] = ['claude', 'codex', 'dsh', 'custom_endpoint'];
 
 export function AgentView({
   lang,
   config,
-  agentStatus,
-  activeSessionId,
+  magpieStatus,
   isSending = false,
   messages,
   onSendMessage,
@@ -83,15 +72,15 @@ export function AgentView({
   onDispatchAction,
   onNavigateView,
   onCopyText,
-  onChangeProvider,
-  onTogglePermissionMode,
-  onPickWorkspace,
+  onSelectMagpieModel,
+  onRefreshMagpie,
   onStopRun,
 }: AgentViewProps) {
   const t = TRANSLATIONS[lang];
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState<AttachedFileItem[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [refreshingModels, setRefreshingModels] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -155,14 +144,18 @@ export function AgentView({
     }
   };
 
+  const handleRefresh = async () => {
+    setRefreshingModels(true);
+    try {
+      await onRefreshMagpie();
+    } finally {
+      setRefreshingModels(false);
+    }
+  };
+
   const isEmpty = messages.length === 0;
-  const activeMode = agentStatus.supported ? agentStatus.settings.activeProvider : 'custom_endpoint';
-  const isCliMode = agentStatus.supported && activeMode !== 'custom_endpoint';
-  const isTurbo = agentStatus.settings.permissionMode !== 'normal';
-  const workspaceName =
-    agentStatus.settings.workspaceDir.split(/[\\/]/).filter(Boolean).pop() ||
-    agentStatus.settings.workspaceDir ||
-    t.agent.workspaceLabel;
+  const isMagpieActive = magpieStatus.supported && magpieStatus.settings.mode === 'magpie';
+  const currentMagpieModel = magpieStatus.settings.model || magpieStatus.models[0]?.id || '';
 
   return (
     <div
@@ -171,94 +164,78 @@ export function AgentView({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* Claudian-style Agent Bar */}
-      {agentStatus.supported && (
+      {/* Simple Magpie Model Channel Bar */}
+      {magpieStatus.supported && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E5E7EB] bg-white px-5 py-2 sm:px-8">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {PROVIDER_PILLS.map((mode) => {
-              const meta = AGENT_PROVIDER_META[mode];
-              const isSelected = activeMode === mode;
-              const isCli = mode !== 'custom_endpoint';
-              const installed = isCli ? agentStatus.probes[mode]?.installed : true;
-              const dotClass = !isCli
-                ? 'bg-[#2563EB]'
-                : installed
-                  ? 'bg-[#16A34A]'
-                  : 'bg-[#CBD5E1]';
-              return (
-                <button
-                  key={mode}
-                  type="button"
-                  disabled={isSending}
-                  onClick={() => onChangeProvider(mode)}
-                  title={
-                    isCli && !installed
-                      ? `${meta.label}: ${t.agent.cliNotInstalled}`
-                      : meta.label
-                  }
-                  className={`inline-flex items-center gap-1.5 rounded-control border px-2.5 py-1 text-[12px] font-medium transition-colors whitespace-nowrap disabled:opacity-60 ${
-                    isSelected
-                      ? 'border-[#0F172A] bg-[#0F172A] text-white'
-                      : 'border-[#E5E7EB] bg-[#F8F9FA] text-[#475569] hover:border-[#CBD5E1] hover:bg-white hover:text-[#0F172A]'
-                  }`}
-                >
-                  <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
-                  <span>{meta.shortLabel}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            {isCliMode && (
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {isMagpieActive ? (
               <>
-                <button
-                  type="button"
-                  disabled={isSending}
-                  onClick={onTogglePermissionMode}
-                  className={`inline-flex items-center gap-1 rounded-control border px-2.5 py-1 text-[11px] font-medium transition-colors whitespace-nowrap disabled:opacity-60 ${
-                    isTurbo
-                      ? 'border-[#FDE68A] bg-[#FEF3C7] text-[#B45309] hover:bg-[#FDE68A]/70'
-                      : 'border-[#E5E7EB] bg-[#F8F9FA] text-[#475569] hover:bg-white'
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-inner px-2.5 py-1 text-[12px] font-medium whitespace-nowrap ${
+                    magpieStatus.online
+                      ? 'bg-[#F0FDF4] text-[#15803D]'
+                      : 'bg-[#FEF3C7] text-[#B45309]'
                   }`}
                 >
-                  {isTurbo ? <Zap className="h-3 w-3" /> : <ShieldCheck className="h-3 w-3" />}
-                  <span>{isTurbo ? t.agent.turboMode : t.agent.normalMode}</span>
-                </button>
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      magpieStatus.online ? 'bg-[#16A34A]' : 'bg-[#D97706]'
+                    }`}
+                  />
+                  {magpieStatus.online ? t.agent.magpieConnected : t.agent.magpieDisconnected}
+                </span>
+
+                {magpieStatus.models.length > 0 && (
+                  <select
+                    value={currentMagpieModel}
+                    disabled={isSending}
+                    onChange={(e) => onSelectMagpieModel(e.target.value)}
+                    aria-label={t.settings.magpieModelLabel}
+                    className="h-7 max-w-[280px] rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-2.5 font-mono text-[12px] text-[#0F172A] focus:border-[#2563EB] focus:bg-white focus:outline-none disabled:opacity-60"
+                  >
+                    {!magpieStatus.models.some((m) => m.id === currentMagpieModel) &&
+                      currentMagpieModel && (
+                        <option value={currentMagpieModel}>{currentMagpieModel}</option>
+                      )}
+                    {magpieStatus.models.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.id}
+                      </option>
+                    ))}
+                  </select>
+                )}
 
                 <button
                   type="button"
-                  disabled={isSending}
-                  onClick={onPickWorkspace}
-                  title={agentStatus.settings.workspaceDir}
-                  className="inline-flex max-w-[200px] items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-2.5 py-1 text-[11px] font-medium text-[#475569] transition-colors hover:border-[#2563EB] hover:bg-white hover:text-[#0F172A] disabled:opacity-60"
+                  disabled={refreshingModels || isSending}
+                  onClick={handleRefresh}
+                  title={t.agent.refreshModels}
+                  aria-label={t.agent.refreshModels}
+                  className="flex h-7 w-7 items-center justify-center rounded-control border border-[#E5E7EB] bg-[#F8F9FA] text-[#64748B] hover:border-[#2563EB] hover:bg-white hover:text-[#2563EB] disabled:opacity-50"
                 >
-                  <FolderOpen className="h-3 w-3 shrink-0 text-[#64748B]" />
-                  <span className="truncate font-mono">{workspaceName}</span>
+                  <RefreshCw className={`h-3.5 w-3.5 ${refreshingModels ? 'animate-spin' : ''}`} />
                 </button>
-
-                {activeSessionId && (
-                  <span
-                    title={activeSessionId}
-                    className="inline-flex items-center gap-1 rounded-inner bg-[#EFF6FF] px-2 py-1 font-mono text-[11px] text-[#1D4ED8] whitespace-nowrap"
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB]" />
-                    {t.agent.sessionActive}
-                  </span>
-                )}
               </>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-inner bg-[#EFF6FF] px-2.5 py-1 text-[12px] font-medium text-[#1D4ED8]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB]" />
+                {config.runtimeMode === 'custom_endpoint'
+                  ? `${t.agent.customApiLabel} · ${config.llmModel || 'Custom'}`
+                  : t.agent.activeLocalRouter}
+              </span>
             )}
-
-            <button
-              type="button"
-              onClick={() => onNavigateView('settings')}
-              title={t.agent.settingsLink}
-              aria-label={t.agent.settingsLink}
-              className="flex h-7 w-7 items-center justify-center rounded-control border border-[#E5E7EB] bg-[#F8F9FA] text-[#64748B] hover:border-[#CBD5E1] hover:bg-white hover:text-[#0F172A]"
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-            </button>
           </div>
+
+          <button
+            type="button"
+            onClick={() => onNavigateView('settings')}
+            title={t.agent.settingsLink}
+            aria-label={t.agent.settingsLink}
+            className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-[#F8F9FA] px-2.5 py-1 text-[11px] font-medium text-[#475569] hover:border-[#CBD5E1] hover:bg-white hover:text-[#0F172A] whitespace-nowrap"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            <span>{t.agent.settingsLink}</span>
+          </button>
         </div>
       )}
 
@@ -321,10 +298,8 @@ export function AgentView({
                   <div className="w-full max-w-[720px]">
                     <div className="flex flex-wrap items-center gap-2 text-[12px] text-[#64748B]">
                       <span className="inline-flex items-center gap-1.5 font-medium text-[#0F172A]">
-                        {msg.provider && msg.provider !== 'custom_endpoint' && (
-                          <Terminal className="h-3.5 w-3.5 text-[#2563EB]" />
-                        )}
-                        {msg.provider ? AGENT_PROVIDER_META[msg.provider].label : 'Joel Desk Pro Agent'}
+                        {msg.model && <Sparkles className="h-3.5 w-3.5 text-[#2563EB]" />}
+                        {msg.model ? 'Magpie' : 'Joel Desk Pro Agent'}
                       </span>
                       {msg.model && (
                         <span className="rounded-inner bg-[#F3F4F6] px-1.5 py-0.5 font-mono text-[11px] text-[#475569]">
@@ -341,13 +316,8 @@ export function AgentView({
                       )}
                     </div>
 
-                    {(msg.thinking || (msg.toolSteps && msg.toolSteps.length > 0)) && (
-                      <AgentTraceDrawer
-                        lang={lang}
-                        thinking={msg.thinking}
-                        toolSteps={msg.toolSteps}
-                        isStreaming={Boolean(msg.isStreaming)}
-                      />
+                    {msg.thinking && (
+                      <ThinkingDrawer lang={lang} thinking={msg.thinking} />
                     )}
 
                     {(msg.content || msg.isStreaming) && (
@@ -491,7 +461,7 @@ export function AgentView({
               className="max-h-32 flex-1 resize-none bg-transparent py-2 text-[14px] text-[#0F172A] placeholder:text-[#94A3B8] focus:outline-none"
             />
 
-            {isSending && isCliMode ? (
+            {isSending && isMagpieActive ? (
               <button
                 type="button"
                 onClick={onStopRun}
@@ -521,16 +491,18 @@ export function AgentView({
             >
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  isCliMode || config.runtimeMode === 'custom_endpoint' ? 'bg-[#2563EB]' : 'bg-[#16A34A]'
+                  isMagpieActive
+                    ? magpieStatus.online
+                      ? 'bg-[#16A34A]'
+                      : 'bg-[#D97706]'
+                    : config.runtimeMode === 'custom_endpoint'
+                      ? 'bg-[#2563EB]'
+                      : 'bg-[#16A34A]'
                 }`}
               />
               <span className="font-mono">
-                {isCliMode
-                  ? `${AGENT_PROVIDER_META[activeMode].label}${
-                      agentStatus.settings.providers[activeMode as 'claude' | 'codex' | 'dsh']?.model
-                        ? ` · ${agentStatus.settings.providers[activeMode as 'claude' | 'codex' | 'dsh'].model}`
-                        : ''
-                    }`
+                {isMagpieActive
+                  ? `Magpie · ${currentMagpieModel || t.agent.magpieDisconnected}`
                   : config.runtimeMode === 'custom_endpoint'
                     ? t.agent.activeCustomModel(config.llmModel || 'Custom LLM')
                     : t.agent.activeLocalRouter}
@@ -544,34 +516,23 @@ export function AgentView({
   );
 }
 
-interface AgentTraceDrawerProps {
+interface ThinkingDrawerProps {
   lang: AppLanguage;
-  thinking?: string;
-  toolSteps?: AgentToolStep[];
-  isStreaming: boolean;
+  thinking: string;
 }
 
-function AgentTraceDrawer({ lang, thinking, toolSteps = [], isStreaming }: AgentTraceDrawerProps) {
+function ThinkingDrawer({ lang, thinking }: ThinkingDrawerProps) {
   const t = TRANSLATIONS[lang];
   const [expanded, setExpanded] = useState(false);
-  const runningCount = toolSteps.filter((s) => s.status === 'running').length;
-  const totalCount = toolSteps.length + (thinking ? 1 : 0);
 
   return (
-    <div className="mt-2.5 overflow-hidden rounded-control border border-[#E5E7EB] bg-white">
+    <div className="mt-2 overflow-hidden rounded-control border border-[#E5E7EB] bg-white">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[12px] font-medium text-[#475569] hover:bg-[#F8F9FA]"
+        className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-[12px] font-medium text-[#64748B] hover:bg-[#F8F9FA] hover:text-[#0F172A]"
       >
-        <div className="flex items-center gap-2">
-          {isStreaming && runningCount > 0 ? (
-            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-[#2563EB]" />
-          ) : (
-            <Wrench className="h-3.5 w-3.5 shrink-0 text-[#64748B]" />
-          )}
-          <span>{t.agent.thinkingAndTools(totalCount)}</span>
-        </div>
+        <span>{t.agent.thinkingTitle}</span>
         {expanded ? (
           <ChevronDown className="h-3.5 w-3.5 text-[#94A3B8]" />
         ) : (
@@ -580,48 +541,9 @@ function AgentTraceDrawer({ lang, thinking, toolSteps = [], isStreaming }: Agent
       </button>
 
       {expanded && (
-        <div className="space-y-2 border-t border-[#E5E7EB] bg-[#F8F9FA] p-3">
-          {thinking && (
-            <div className="rounded-inner border border-[#E5E7EB] bg-white px-2.5 py-2">
-              <div className="mb-1 text-[11px] font-medium text-[#64748B]">
-                {t.agent.thinkingTitle}
-              </div>
-              <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-[#475569]">
-                {thinking.trim()}
-              </pre>
-            </div>
-          )}
-
-          {toolSteps.map((step) => (
-            <div
-              key={step.id}
-              className="rounded-inner border border-[#E5E7EB] bg-white px-2.5 py-2 text-[12px]"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-1.5">
-                  {step.status === 'running' ? (
-                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-[#2563EB]" />
-                  ) : step.status === 'error' ? (
-                    <AlertCircle className="h-3.5 w-3.5 shrink-0 text-[#DC2626]" />
-                  ) : (
-                    <Check className="h-3.5 w-3.5 shrink-0 text-[#16A34A]" />
-                  )}
-                  <span className="truncate font-mono font-medium text-[#0F172A]">{step.name}</span>
-                </div>
-              </div>
-              {step.input && (
-                <div className="mt-1 truncate font-mono text-[11px] text-[#64748B]" title={step.input}>
-                  {step.input}
-                </div>
-              )}
-              {step.output && (
-                <pre className="mt-1.5 max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded bg-[#F8F9FA] p-2 font-mono text-[11px] text-[#334155]">
-                  {step.output}
-                </pre>
-              )}
-            </div>
-          ))}
-        </div>
+        <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words border-t border-[#E5E7EB] bg-[#F8F9FA] p-3 font-mono text-[11px] leading-relaxed text-[#475569]">
+          {thinking.trim()}
+        </pre>
       )}
     </div>
   );

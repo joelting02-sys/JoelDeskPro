@@ -9,26 +9,23 @@ import { SettingsView } from './components/SettingsView';
 import { UpdateModal } from './components/UpdateModal';
 import {
   AgentActionPayload,
-  AgentBackendMode,
   AgentMessage,
-  AgentRunnerStatus,
-  AgentSettings,
-  AgentToolStep,
   AttachedFileItem,
-  CliAgentProvider,
   ComputeProvider,
   ConversionTask,
   DocumentFormat,
   EndpointConfig,
+  MagpieSettings,
+  MagpieStatus,
   ToastNotice,
   TranscriptLanguage,
   WhisperPresetId,
   WorkspaceView,
 } from './types/toolkit';
 import {
-  INITIAL_AGENT_STATUS,
-  isDesktopAgentSupported,
-} from './services/agentBridge';
+  INITIAL_MAGPIE_STATUS,
+  isDesktopMagpieSupported,
+} from './services/magpieBridge';
 import {
   DEFAULT_ENDPOINT_CONFIG,
   callCustomLlmEndpoint,
@@ -89,15 +86,10 @@ export default function App() {
   }));
   const [whisperVisited, setWhisperVisited] = useState(false);
   const [whisperReloadNonce, setWhisperReloadNonce] = useState(0);
-  const [agentStatus, setAgentStatus] = useState<AgentRunnerStatus>(() => ({
-    ...INITIAL_AGENT_STATUS,
-    supported: isDesktopAgentSupported(),
+  const [magpieStatus, setMagpieStatus] = useState<MagpieStatus>(() => ({
+    ...INITIAL_MAGPIE_STATUS,
+    supported: isDesktopMagpieSupported(),
   }));
-  const [agentSessions, setAgentSessions] = useState<Record<CliAgentProvider, string | null>>({
-    claude: null,
-    codex: null,
-    dsh: null,
-  });
 
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<GitHubUpdateInfo | null>(null);
@@ -114,9 +106,7 @@ export default function App() {
   const lastDownloadBoundsRef = useRef<TdmBounds | undefined>(undefined);
   const whisperIframeRef = useRef<HTMLIFrameElement>(null);
   const diskLlmSyncedRef = useRef(false);
-  const activeRunRef = useRef<{ runId: string; messageId: string; provider: CliAgentProvider } | null>(
-    null
-  );
+  const activeRunRef = useRef<{ runId: string; messageId: string } | null>(null);
 
   const t = TRANSLATIONS[lang];
 
@@ -255,47 +245,32 @@ export default function App() {
     };
   }, []);
 
-  // Sync Claudian-style CLI Agent runner status & streaming events
+  // Sync direct Magpie model channel status & SSE streaming events
   useEffect(() => {
-    const agentApi = window.joelDesktop?.agent;
-    if (!agentApi || !isDesktopAgentSupported()) return;
+    const magpieApi = window.joelDesktop?.magpie;
+    if (!magpieApi || !isDesktopMagpieSupported()) return;
 
     let mounted = true;
-    agentApi.getStatus().then((st) => {
+    magpieApi.getStatus(true).then((st) => {
       if (!mounted || !st) return;
-      setAgentStatus(st);
+      setMagpieStatus(st);
     });
 
-    const off = agentApi.onEvent((evt) => {
+    const off = magpieApi.onEvent((evt) => {
       if (!mounted || !evt) return;
-      if (evt.type === 'status' && evt.status && typeof evt.status === 'object') {
-        setAgentStatus(evt.status as AgentRunnerStatus);
+      if (evt.type === 'status' && evt.status) {
+        setMagpieStatus(evt.status);
         return;
       }
 
       const currentRun = activeRunRef.current;
       if (!currentRun || (evt.runId && evt.runId !== currentRun.runId)) return;
 
-      if (evt.type === 'session' && evt.sessionId) {
-        setAgentSessions((prev) => ({
-          ...prev,
-          [currentRun.provider]: evt.sessionId!,
-        }));
-        return;
-      }
-
       if (evt.type === 'text-delta' && typeof evt.text === 'string') {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === currentRun.messageId ? { ...m, content: `${m.content}${evt.text}` } : m
           )
-        );
-        return;
-      }
-
-      if (evt.type === 'text-replace' && typeof evt.text === 'string') {
-        setMessages((prev) =>
-          prev.map((m) => (m.id === currentRun.messageId ? { ...m, content: evt.text! } : m))
         );
         return;
       }
@@ -311,48 +286,7 @@ export default function App() {
         return;
       }
 
-      if (evt.type === 'tool-call' && evt.toolId) {
-        const nextStepStatus =
-          evt.status === 'error' || evt.status === 'done' || evt.status === 'running'
-            ? evt.status
-            : 'running';
-        setMessages((prev) =>
-          prev.map((m) => {
-            if (m.id !== currentRun.messageId) return m;
-            const steps = [...(m.toolSteps || [])];
-            const idx = steps.findIndex((s) => s.id === evt.toolId);
-            if (idx >= 0) {
-              const prevStep = steps[idx];
-              steps[idx] = {
-                ...prevStep,
-                name: evt.name || prevStep.name,
-                input: evt.input ?? prevStep.input,
-                output: evt.output ?? prevStep.output,
-                status: nextStepStatus,
-              };
-            } else {
-              const newStep: AgentToolStep = {
-                id: evt.toolId!,
-                name: evt.name || 'tool',
-                input: evt.input,
-                output: evt.output,
-                status: nextStepStatus,
-              };
-              steps.push(newStep);
-            }
-            return { ...m, toolSteps: steps };
-          })
-        );
-        return;
-      }
-
       if (evt.type === 'done') {
-        if (evt.sessionId) {
-          setAgentSessions((prev) => ({
-            ...prev,
-            [currentRun.provider]: evt.sessionId!,
-          }));
-        }
         setMessages((prev) =>
           prev.map((m) =>
             m.id === currentRun.messageId
@@ -711,73 +645,46 @@ export default function App() {
     [showToast]
   );
 
-  // Claudian-style CLI Agent handlers
-  const handleChangeAgentProvider = useCallback(async (provider: AgentBackendMode) => {
-    const agentApi = window.joelDesktop?.agent;
-    if (!agentApi) return;
-    const res = await agentApi.saveSettings({ activeProvider: provider });
-    if (res?.status) setAgentStatus(res.status);
+  // Direct Magpie channel handlers
+  const handleSelectMagpieModel = useCallback(async (model: string) => {
+    const magpieApi = window.joelDesktop?.magpie;
+    if (!magpieApi) return;
+    const res = await magpieApi.saveSettings({ model });
+    if (res?.status) setMagpieStatus(res.status);
   }, []);
 
-  const handleToggleAgentPermission = useCallback(async () => {
-    const agentApi = window.joelDesktop?.agent;
-    if (!agentApi) return;
-    const nextMode = agentStatus.settings.permissionMode === 'turbo' ? 'normal' : 'turbo';
-    const res = await agentApi.saveSettings({ permissionMode: nextMode });
-    if (res?.status) setAgentStatus(res.status);
-  }, [agentStatus.settings.permissionMode]);
-
-  const handlePickAgentWorkspace = useCallback(async () => {
-    const agentApi = window.joelDesktop?.agent;
-    if (!agentApi) return;
-    const res = await agentApi.pickWorkspace();
-    if (res?.status) setAgentStatus(res.status);
-    if (res?.ok && res.workspaceDir) {
-      const base = res.workspaceDir.split(/[\\/]/).filter(Boolean).pop() || res.workspaceDir;
-      showToast(TRANSLATIONS[langRef.current].toasts.agentWorkspaceUpdated(base), 'success');
-    }
-  }, [showToast]);
-
-  const handlePickAgentCli = useCallback(async (provider: CliAgentProvider) => {
-    const agentApi = window.joelDesktop?.agent;
-    if (!agentApi) return;
-    const res = await agentApi.pickCli(provider);
-    if (res?.status) setAgentStatus(res.status);
-  }, []);
-
-  const handleImportClaudian = useCallback(async () => {
-    const agentApi = window.joelDesktop?.agent;
-    if (!agentApi) {
-      return { ok: false, error: TRANSLATIONS[langRef.current].toasts.claudianImportFailed };
-    }
-    const res = await agentApi.importClaudian();
-    if (res?.status) setAgentStatus(res.status);
-    if (res?.ok && res.sourcePath) {
-      showToast(TRANSLATIONS[langRef.current].toasts.claudianImported(res.sourcePath), 'success');
+  const handleRefreshMagpie = useCallback(async (): Promise<MagpieStatus | null> => {
+    const magpieApi = window.joelDesktop?.magpie;
+    if (!magpieApi) return null;
+    const st = await magpieApi.getStatus(true);
+    setMagpieStatus(st);
+    if (st.online) {
+      showToast(TRANSLATIONS[langRef.current].toasts.magpieRefreshed(st.models.length), 'success');
     } else {
-      showToast(res?.error || TRANSLATIONS[langRef.current].toasts.claudianImportFailed, 'warning');
+      showToast(TRANSLATIONS[langRef.current].toasts.magpieOffline, 'warning');
     }
-    return { ok: Boolean(res?.ok), sourcePath: res?.sourcePath, error: res?.error };
+    return st;
   }, [showToast]);
 
-  const handleSaveAgentSettings = useCallback(
-    async (next: AgentSettings) => {
-      const agentApi = window.joelDesktop?.agent;
-      if (!agentApi) return;
-      const res = await agentApi.saveSettings(next);
-      if (res?.status) setAgentStatus(res.status);
+  const handleSaveMagpieSettings = useCallback(
+    async (patch: Partial<MagpieSettings>): Promise<MagpieStatus | null> => {
+      const magpieApi = window.joelDesktop?.magpie;
+      if (!magpieApi) return null;
+      const res = await magpieApi.saveSettings(patch);
+      if (res?.status) setMagpieStatus(res.status);
       if (res?.ok) {
-        showToast(TRANSLATIONS[langRef.current].toasts.agentSettingsSaved, 'success');
+        showToast(TRANSLATIONS[langRef.current].toasts.magpieSaved, 'success');
       }
+      return res?.status || null;
     },
     [showToast]
   );
 
-  const handleStopAgentRun = useCallback(async () => {
+  const handleStopMagpieRun = useCallback(async () => {
     const runId = activeRunRef.current?.runId;
     if (!runId) return;
-    await window.joelDesktop?.agent?.stop(runId);
-    showToast(TRANSLATIONS[langRef.current].toasts.agentStopped, 'neutral');
+    await window.joelDesktop?.magpie?.stop(runId);
+    showToast(TRANSLATIONS[langRef.current].toasts.magpieStopped, 'neutral');
   }, [showToast]);
 
   // Agent Handlers
@@ -812,16 +719,15 @@ export default function App() {
     });
 
     const assistantMsgId = `msg-a-${Date.now() + 1}`;
-    const agentApi = window.joelDesktop?.agent;
-    const activeProvider = agentStatus.settings.activeProvider;
-    const useCliAgent = Boolean(
-      agentApi && isDesktopAgentSupported() && activeProvider !== 'custom_endpoint'
+    const magpieApi = window.joelDesktop?.magpie;
+    const useMagpieChannel = Boolean(
+      magpieApi && isDesktopMagpieSupported() && magpieStatus.settings.mode === 'magpie'
     );
 
-    if (useCliAgent && activeProvider !== 'custom_endpoint') {
-      const cliProvider = activeProvider as CliAgentProvider;
-      const runId = `run-${Date.now()}`;
-      const configuredModel = agentStatus.settings.providers[cliProvider]?.model || '';
+    if (useMagpieChannel) {
+      const runId = `magpie-${Date.now()}`;
+      const chosenModel =
+        magpieStatus.settings.model || magpieStatus.models[0]?.id || '';
 
       let effectivePrompt = text.trim();
       if (attachments.length > 0) {
@@ -830,8 +736,14 @@ export default function App() {
           .join('\n');
         effectivePrompt = effectivePrompt
           ? `${effectivePrompt}\n\n[Attached Files]\n${filesBlock}`
-          : `Please inspect and help handle these files:\n${filesBlock}`;
+          : `请协助分析或处理以下文件：\n${filesBlock}`;
       }
+
+      const historyMessages = messages
+        .slice(-16)
+        .filter((m) => typeof m.content === 'string' && m.content.trim())
+        .map((m) => ({ role: m.role, content: m.content }));
+      historyMessages.push({ role: 'user', content: effectivePrompt });
 
       const assistantMsg: AgentMessage = {
         id: assistantMsgId,
@@ -839,27 +751,21 @@ export default function App() {
         content: '',
         action: parsed.action,
         timestamp: nowTimeLabel(),
-        provider: cliProvider,
-        model: configuredModel || undefined,
+        model: chosenModel || undefined,
         thinking: '',
-        toolSteps: [],
         isStreaming: true,
       };
 
-      activeRunRef.current = { runId, messageId: assistantMsgId, provider: cliProvider };
+      activeRunRef.current = { runId, messageId: assistantMsgId };
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
       setAgentSending(true);
 
-      agentApi!
+      magpieApi!
         .send({
           runId,
-          provider: cliProvider,
-          prompt: effectivePrompt,
-          sessionId: agentSessions[cliProvider],
-          workspaceDir: agentStatus.settings.workspaceDir,
-          permissionMode: agentStatus.settings.permissionMode,
-          model: configuredModel,
-          systemPrompt: agentStatus.settings.systemPrompt || config.llmSystemPrompt,
+          messages: historyMessages,
+          model: chosenModel,
+          systemPrompt: magpieStatus.settings.systemPrompt || config.llmSystemPrompt,
         })
         .then((res) => {
           if (!res?.ok) {
@@ -871,10 +777,14 @@ export default function App() {
                   ? {
                       ...m,
                       isStreaming: false,
-                      error: res?.error || 'Failed to launch CLI Agent',
+                      error: res?.error || TRANSLATIONS[langRef.current].toasts.magpieOffline,
                     }
                   : m
               )
+            );
+          } else if (res.model) {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantMsgId ? { ...m, model: res.model } : m))
             );
           }
         })
@@ -902,7 +812,6 @@ export default function App() {
       content: parsed.reply,
       action: parsed.action,
       timestamp: nowTimeLabel(),
-      provider: 'custom_endpoint',
     };
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
 
@@ -1070,12 +979,11 @@ export default function App() {
           type="button"
           onClick={() => {
             if (activeRunRef.current) {
-              window.joelDesktop?.agent?.stop(activeRunRef.current.runId).catch(() => {});
+              window.joelDesktop?.magpie?.stop(activeRunRef.current.runId).catch(() => {});
               activeRunRef.current = null;
               setAgentSending(false);
             }
             setMessages([]);
-            setAgentSessions({ claude: null, codex: null, dsh: null });
             showToast(t.toasts.newChatStarted);
           }}
           className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3.5 py-1.5 text-[12px] font-medium text-[#0F172A] hover:bg-[#F8F9FA] whitespace-nowrap shrink-0"
@@ -1277,12 +1185,7 @@ export default function App() {
             <AgentView
               lang={lang}
               config={config}
-              agentStatus={agentStatus}
-              activeSessionId={
-                agentStatus.settings.activeProvider === 'custom_endpoint'
-                  ? null
-                  : agentSessions[agentStatus.settings.activeProvider]
-              }
+              magpieStatus={magpieStatus}
               isSending={agentSending}
               messages={messages}
               onSendMessage={handleSendAgentMessage}
@@ -1290,10 +1193,11 @@ export default function App() {
               onDispatchAction={handleDispatchAgentAction}
               onNavigateView={setActiveView}
               onCopyText={handleCopyText}
-              onChangeProvider={handleChangeAgentProvider}
-              onTogglePermissionMode={handleToggleAgentPermission}
-              onPickWorkspace={handlePickAgentWorkspace}
-              onStopRun={handleStopAgentRun}
+              onSelectMagpieModel={handleSelectMagpieModel}
+              onRefreshMagpie={async () => {
+                await handleRefreshMagpie();
+              }}
+              onStopRun={handleStopMagpieRun}
             />
           )}
 
@@ -1370,7 +1274,7 @@ export default function App() {
             <SettingsView
               lang={lang}
               config={config}
-              agentStatus={agentStatus}
+              magpieStatus={magpieStatus}
               onSaveConfig={(next) => {
                 setConfig(next);
                 saveLlmConfigToStorage(next);
@@ -1389,10 +1293,8 @@ export default function App() {
                 }
                 showToast(t.toasts.configSaved, 'success');
               }}
-              onSaveAgentSettings={handleSaveAgentSettings}
-              onImportClaudian={handleImportClaudian}
-              onPickAgentWorkspace={handlePickAgentWorkspace}
-              onPickAgentCli={handlePickAgentCli}
+              onSaveMagpieSettings={handleSaveMagpieSettings}
+              onRefreshMagpie={handleRefreshMagpie}
             />
           )}
         </main>

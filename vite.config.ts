@@ -5,8 +5,17 @@ import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
+  const pkgRaw = fs
+    .readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')
+    .replace(/^\uFEFF/, '');
+  const pkg = JSON.parse(pkgRaw) as { version?: string };
+  const appVersion = pkg.version || '1.4.7';
+
   return {
     base: process.env.ELECTRON_BUILD === 'true' ? './' : '/',
+    define: {
+      __APP_VERSION__: JSON.stringify(appVersion),
+    },
     plugins: [
       react(),
       tailwindcss(),

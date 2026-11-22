@@ -7,13 +7,13 @@ const https = require('node:https');
 const { startLocalEngine } = require('./localEngine.cjs');
 const { createTdmDockManager } = require('./tdmDockManager.cjs');
 const { createWhisperManager } = require('./whisperManager.cjs');
-const { createAgentRunner } = require('./agentRunner.cjs');
+const { createMagpieChannel } = require('./magpieChannel.cjs');
 
 let mainWindow = null;
 let localEngine = null;
 let tdmDockManager = null;
 let whisperManager = null;
-let agentRunner = null;
+let magpieChannel = null;
 let isQuitting = false;
 
 const gotLock = app.requestSingleInstanceLock();
@@ -227,27 +227,18 @@ function registerWhisperIpcHandlers() {
   );
 }
 
-function registerAgentIpcHandlers() {
-  ipcMain.handle('agent:status', () =>
-    agentRunner ? agentRunner.getStatus() : { supported: false }
+function registerMagpieIpcHandlers() {
+  ipcMain.handle('magpie:status', (_e, forceRefresh = true) =>
+    magpieChannel ? magpieChannel.getStatus(Boolean(forceRefresh)) : { supported: false }
   );
-  ipcMain.handle('agent:save-settings', (_e, patch) =>
-    agentRunner ? agentRunner.saveSettings(patch) : { ok: false }
+  ipcMain.handle('magpie:save-settings', (_e, patch) =>
+    magpieChannel ? magpieChannel.saveSettings(patch) : { ok: false }
   );
-  ipcMain.handle('agent:import-claudian', (_e, customPath) =>
-    agentRunner ? agentRunner.importClaudianConfig(customPath) : { ok: false }
+  ipcMain.handle('magpie:send', (_e, payload) =>
+    magpieChannel ? magpieChannel.sendChat(payload) : { ok: false }
   );
-  ipcMain.handle('agent:pick-workspace', () =>
-    agentRunner ? agentRunner.pickWorkspace() : { ok: false, canceled: true }
-  );
-  ipcMain.handle('agent:pick-cli', (_e, provider) =>
-    agentRunner ? agentRunner.pickCliExe(provider) : { ok: false, canceled: true }
-  );
-  ipcMain.handle('agent:send', (_e, payload) =>
-    agentRunner ? agentRunner.sendMessage(payload) : { ok: false }
-  );
-  ipcMain.handle('agent:stop', (_e, runId) =>
-    agentRunner ? agentRunner.stopRun(runId) : { ok: false }
+  ipcMain.handle('magpie:stop', (_e, runId) =>
+    magpieChannel ? magpieChannel.stopRun(runId) : { ok: false }
   );
 }
 
@@ -271,11 +262,10 @@ app.whenReady().then(() => {
   createWindow();
   registerTdmIpcHandlers();
   registerWhisperIpcHandlers();
-  registerAgentIpcHandlers();
+  registerMagpieIpcHandlers();
 
-  agentRunner = createAgentRunner({
+  magpieChannel = createMagpieChannel({
     mainWindow,
-    dialog,
   });
 
   tdmDockManager = createTdmDockManager({
@@ -312,11 +302,11 @@ app.on('before-quit', async (event) => {
   isQuitting = true;
   event.preventDefault();
 
-  if (agentRunner) {
+  if (magpieChannel) {
     try {
-      await agentRunner.shutdown();
+      await magpieChannel.shutdown();
     } catch {}
-    agentRunner = null;
+    magpieChannel = null;
   }
   if (whisperManager) {
     try {

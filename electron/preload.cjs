@@ -48,14 +48,11 @@ contextBridge.exposeInMainWorld('joelDesktop', {
       return () => ipcRenderer.removeListener('whisper:event', handler);
     },
   },
-  agent: {
-    getStatus: () => ipcRenderer.invoke('agent:status'),
-    saveSettings: (patch) => ipcRenderer.invoke('agent:save-settings', patch),
-    importClaudian: (customPath) => ipcRenderer.invoke('agent:import-claudian', customPath),
-    pickWorkspace: () => ipcRenderer.invoke('agent:pick-workspace'),
-    pickCli: (provider) => ipcRenderer.invoke('agent:pick-cli', provider),
-    send: (payload) => ipcRenderer.invoke('agent:send', payload),
-    stop: (runId) => ipcRenderer.invoke('agent:stop', runId),
+  magpie: {
+    getStatus: (forceRefresh = true) => ipcRenderer.invoke('magpie:status', forceRefresh),
+    saveSettings: (patch) => ipcRenderer.invoke('magpie:save-settings', patch),
+    send: (payload) => ipcRenderer.invoke('magpie:send', payload),
+    stop: (runId) => ipcRenderer.invoke('magpie:stop', runId),
     onEvent: (listener) => {
       if (typeof listener !== 'function') return () => {};
       const handler = (_event, payload) => {
@@ -63,8 +60,8 @@ contextBridge.exposeInMainWorld('joelDesktop', {
           listener(payload);
         } catch {}
       };
-      ipcRenderer.on('agent:event', handler);
-      return () => ipcRenderer.removeListener('agent:event', handler);
+      ipcRenderer.on('magpie:event', handler);
+      return () => ipcRenderer.removeListener('magpie:event', handler);
     },
   },
 });
