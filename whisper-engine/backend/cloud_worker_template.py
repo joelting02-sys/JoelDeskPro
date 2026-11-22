@@ -118,6 +118,7 @@ import tempfile
 import threading
 import time
 import urllib.request
+import uuid
 import numpy as np
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
@@ -128,6 +129,8 @@ CFG = json.loads(os.environ["CW_CFG_JSON"])
 LAST_ACTIVE = time.time()
 STARTED_AT = time.time()
 IN_FLIGHT = 0
+JOBS = {{}}
+JOBS_LOCK = threading.Lock()
 MODEL = None
 GPU_NAME = "CPU"
 DEVICE = "cpu"
@@ -226,6 +229,187 @@ def decode_audio_16k(path: str):
     return path
 
 
+def _prune_jobs():
+    now = time.time()
+    with JOBS_LOCK:
+        stale = [
+            jid for jid, job in JOBS.items()
+            if job.get("finished_at") and now - float(job["finished_at"]) > 1800
+        ]
+        for jid in stale:
+            JOBS.pop(jid, None)
+        if len(JOBS) > 50:
+            finished_items = [
+                (jid, float(job.get("finished_at") or job.get("created_at") or 0.0))
+                for jid, job in JOBS.items()
+                if job.get("status") in ("done", "error")
+            ]
+            finished_items.sort(key=lambda item: item[1])
+            while len(JOBS) > 50 and finished_items:
+                old_jid, _ = finished_items.pop(0)
+                JOBS.pop(old_jid, None)
+
+
+def _run_whisper_job(tmp_path: str, lang_arg, beam_size: int, vad_bool: bool, t0: float, job_id=None):
+    global LAST_ACTIVE
+    audio_input = decode_audio_16k(tmp_path)
+    segs_iter, info = MODEL.transcribe(
+        audio_input,
+        language=lang_arg,
+        beam_size=max(1, min(10, int(beam_size))),
+        vad_filter=vad_bool,
+    )
+    total_dur = round(float(getattr(info, "duration", 0.0)), 2)
+    if job_id:
+        with JOBS_LOCK:
+            job = JOBS.get(job_id)
+            if job is not None:
+                job["duration"] = total_dur
+    segments = []
+    texts = []
+    for s in segs_iter:
+        LAST_ACTIVE = time.time()
+        txt = (s.text or "").strip()
+        if txt:
+            segments.append({{
+                "start": round(float(s.start), 2),
+                "end": round(float(s.end), 2),
+                "text": txt,
+            }})
+            texts.append(txt)
+        if job_id:
+            with JOBS_LOCK:
+                job = JOBS.get(job_id)
+                if job is not None:
+                    job["processed_seconds"] = round(float(s.end), 2)
+                    job["duration"] = total_dur
+                    job["segments_done"] = len(segments)
+    return {{
+        "text": "\\n".join(texts),
+        "segments": segments,
+        "language": getattr(info, "language", lang_arg or "unknown"),
+        "language_probability": round(float(getattr(info, "language_probability", 0.0)), 3),
+        "duration": total_dur,
+        "elapsed": round(time.time() - t0, 2),
+        "engine": CFG["engine"],
+        "gpu": GPU_NAME,
+        "model": CFG["model_name"],
+    }}
+
+
+@app.post("/transcribe/submit")
+async def transcribe_submit(
+    file: UploadFile = File(...),
+    language: str = Form("auto"),
+    beam_size: int = Form(5),
+    vad_filter: str = Form("true"),
+):
+    global LAST_ACTIVE
+    LAST_ACTIVE = time.time()
+    suffix = os.path.splitext(file.filename or "audio.mp3")[1] or ".mp3"
+    fd, tmp_path = tempfile.mkstemp(suffix=suffix)
+    os.close(fd)
+    try:
+        content = await file.read()
+        with open(tmp_path, "wb") as fp:
+            fp.write(content)
+    except Exception as exc:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    lang_arg = None if (not language or language == "auto") else language
+    vad_bool = str(vad_filter).lower() not in ("false", "0", "no")
+    beam_int = int(beam_size)
+    job_id = uuid.uuid4().hex[:12]
+    now = time.time()
+    with JOBS_LOCK:
+        JOBS[job_id] = {{
+            "job_id": job_id,
+            "status": "queued",
+            "created_at": now,
+            "started_at": None,
+            "finished_at": None,
+            "processed_seconds": 0.0,
+            "duration": 0.0,
+            "segments_done": 0,
+            "result": None,
+            "error": None,
+        }}
+
+    def _worker():
+        global LAST_ACTIVE, IN_FLIGHT
+        t_start = time.time()
+        IN_FLIGHT += 1
+        LAST_ACTIVE = t_start
+        with JOBS_LOCK:
+            job = JOBS.get(job_id)
+            if job is not None:
+                job["status"] = "running"
+                job["started_at"] = t_start
+        try:
+            res = _run_whisper_job(tmp_path, lang_arg, beam_int, vad_bool, t_start, job_id=job_id)
+            with JOBS_LOCK:
+                job = JOBS.get(job_id)
+                if job is not None:
+                    job["result"] = res
+                    job["status"] = "done"
+        except Exception as exc:
+            with JOBS_LOCK:
+                job = JOBS.get(job_id)
+                if job is not None:
+                    job["error"] = str(exc)
+                    job["status"] = "error"
+        finally:
+            IN_FLIGHT = max(0, IN_FLIGHT - 1)
+            t_end = time.time()
+            LAST_ACTIVE = t_end
+            with JOBS_LOCK:
+                job = JOBS.get(job_id)
+                if job is not None:
+                    job["finished_at"] = t_end
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+            _prune_jobs()
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return JSONResponse({{"job_id": job_id, "status": "queued"}})
+
+
+@app.get("/transcribe/status/{{job_id}}")
+def transcribe_status(job_id: str):
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        status = job["status"]
+        started_at = job.get("started_at")
+        finished_at = job.get("finished_at")
+        res = job.get("result")
+        elapsed = 0.0
+        if status == "done" and isinstance(res, dict) and "elapsed" in res:
+            elapsed = res["elapsed"]
+        elif started_at is not None:
+            elapsed = round(max(0.0, (finished_at or time.time()) - float(started_at)), 2)
+        payload = {{
+            "job_id": job_id,
+            "status": status,
+            "processed_seconds": job.get("processed_seconds", 0.0),
+            "duration": job.get("duration", 0.0),
+            "segments_done": job.get("segments_done", 0),
+            "elapsed": elapsed,
+        }}
+        if status == "done":
+            payload["result"] = res
+        elif status == "error":
+            payload["error"] = job.get("error") or "Unknown error"
+    return JSONResponse(payload)
+
+
 @app.post("/transcribe")
 async def transcribe(
     file: UploadFile = File(...),
@@ -247,41 +431,12 @@ async def transcribe(
 
         lang_arg = None if (not language or language == "auto") else language
         vad_bool = str(vad_filter).lower() not in ("false", "0", "no")
-        def _run_blocking():
-            # 放到线程池执行：转录期间 /health 仍能即时响应，本地不会误判「算力离线」
-            audio_input = decode_audio_16k(tmp_path)
-            segs_iter, info = MODEL.transcribe(
-                audio_input,
-                language=lang_arg,
-                beam_size=max(1, min(10, int(beam_size))),
-                vad_filter=vad_bool,
-            )
-            segments = []
-            texts = []
-            for s in segs_iter:
-                txt = (s.text or "").strip()
-                if txt:
-                    segments.append({{
-                        "start": round(float(s.start), 2),
-                        "end": round(float(s.end), 2),
-                        "text": txt,
-                    }})
-                    texts.append(txt)
-            return segments, texts, info
-
-        segments, texts, info = await run_in_threadpool(_run_blocking)
+        # 放到线程池执行：转录期间 /health 仍能即时响应，本地不会误判「算力离线」
+        payload = await run_in_threadpool(
+            _run_whisper_job, tmp_path, lang_arg, int(beam_size), vad_bool, t0, None
+        )
         LAST_ACTIVE = time.time()
-        return JSONResponse({{
-            "text": "\\n".join(texts),
-            "segments": segments,
-            "language": getattr(info, "language", lang_arg or "unknown"),
-            "language_probability": round(float(getattr(info, "language_probability", 0.0)), 3),
-            "duration": round(float(getattr(info, "duration", 0.0)), 2),
-            "elapsed": round(time.time() - t0, 2),
-            "engine": CFG["engine"],
-            "gpu": GPU_NAME,
-            "model": CFG["model_name"],
-        }})
+        return JSONResponse(payload)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
     finally:

@@ -378,13 +378,31 @@ class AppStateManager:
             # 3. 上传并调用云端 Whisper
             self.compute["last_activity_at"] = time.time()
             task["status"] = "uploading"
-            task["stage_label"] = "正在上传音频到云端显卡并极速听写..."
+            task["stage_label"] = "正在上传音频到云端显卡..."
             settings = load_settings()
+
+            def _fmt_sec(sec: float) -> str:
+                total = max(0, int(round(sec)))
+                return f"{total // 60:02d}:{total % 60:02d}"
+
+            def _on_progress(processed_sec: float, total_dur: float, segs_done: int) -> None:
+                task["status"] = "transcribing"
+                self.compute["last_activity_at"] = time.time()
+                dur = total_dur if total_dur > 0 else float(task.get("duration") or 0.0)
+                if dur > 0:
+                    pct = min(99, max(0, int(round(processed_sec * 100.0 / dur))))
+                    task["stage_label"] = (
+                        f"云端 GPU 听写中... {pct}%（{_fmt_sec(processed_sec)} / {_fmt_sec(dur)}，已出 {segs_done} 句）"
+                    )
+                else:
+                    task["stage_label"] = f"云端 GPU 听写中...（已出 {segs_done} 句）"
+
             res = await transcribe_via_gateway(
                 audio_path=slim,
                 language=task["language_req"],
                 beam_size=int(settings.get("beam_size", 5)),
                 vad_filter=bool(settings.get("vad_filter", True)),
+                progress_cb=_on_progress,
             )
             self.compute["last_activity_at"] = time.time()
 

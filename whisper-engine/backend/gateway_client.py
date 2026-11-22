@@ -5,6 +5,10 @@ t4-gateway.joelmz2801.workers.dev 统一转发。
 """
 from __future__ import annotations
 
+import asyncio
+import re
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -76,16 +80,46 @@ async def send_remote_shutdown() -> bool:
         return False
 
 
+def _clean_error_detail(text: str, limit: int = 300) -> str:
+    raw = (text or "").strip()
+    if "<html" in raw.lower() or "<!doctype" in raw.lower():
+        stripped = re.sub(r"<[^>]+>", " ", raw)
+        stripped = re.sub(r"\s+", " ", stripped).strip()
+        raw = stripped or "网关返回 HTML 错误页"
+    return raw[:limit]
+
+
+def _raise_for_gateway_status(resp: httpx.Response, *, legacy: bool = False) -> None:
+    if resp.status_code == 200:
+        return
+    if resp.status_code == 503:
+        raise GatewayError("云端算力尚未就绪或已离线，请先点击「启动算力」等待亮绿灯。")
+    if resp.status_code == 502:
+        raise GatewayError("云端隧道连接中断，请尝试重新启动算力。")
+    if resp.status_code == 524:
+        if legacy:
+            raise GatewayError(
+                "当前云端仍为旧版同步接口，单次转录超过 Cloudflare 100 秒网关上限（HTTP 524）。"
+                "请先点击「关闭算力」再重新「启动算力」，以启用新版异步队列支持长音视频。"
+            )
+        raise GatewayError("请求 Cloudflare 网关超时（HTTP 524），请重试或重启算力。")
+    detail = _clean_error_detail(resp.text)
+    raise GatewayError(f"云端转录失败（HTTP {resp.status_code}）：{detail}")
+
+
 async def transcribe_via_gateway(
     audio_path: Path,
     language: str = "auto",
     beam_size: int = 5,
     vad_filter: bool = True,
-    timeout: float = 900.0,
+    timeout: float = 1800.0,
+    progress_cb: Callable[[float, float, int], None] | None = None,
 ) -> dict[str, Any]:
-    """将瘦身后的本地音频上传至云端 GPU 执行转录。"""
+    """将瘦身后的本地音频提交至云端 GPU 异步转录并轮询结果（规避 Cloudflare 100 秒超时）。"""
     gw = _require_gw()
-    url = f"{gw['gateway_url']}/transcribe"
+    base_url = gw["gateway_url"].rstrip("/")
+    submit_url = f"{base_url}/transcribe/submit"
+    legacy_url = f"{base_url}/transcribe"
     headers = {"Authorization": f"Bearer {gw['gateway_token']}"}
     data = {
         "language": language or "auto",
@@ -96,17 +130,77 @@ async def transcribe_via_gateway(
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
         with audio_path.open("rb") as fp:
             files = {"file": (audio_path.name, fp, "audio/mpeg")}
-            resp = await client.post(url, headers=headers, data=data, files=files)
+            resp = await client.post(submit_url, headers=headers, data=data, files=files, timeout=120.0)
 
-    if resp.status_code == 503:
-        raise GatewayError("云端算力尚未就绪或已离线，请先点击「启动算力」等待亮绿灯。")
-    if resp.status_code == 502:
-        raise GatewayError("云端隧道连接中断，请尝试重新启动算力。")
-    if resp.status_code != 200:
-        detail = resp.text[:300]
-        raise GatewayError(f"云端转录失败（HTTP {resp.status_code}）：{detail}")
+        if resp.status_code == 404:
+            with audio_path.open("rb") as fp:
+                files = {"file": (audio_path.name, fp, "audio/mpeg")}
+                legacy_resp = await client.post(
+                    legacy_url, headers=headers, data=data, files=files, timeout=timeout
+                )
+            _raise_for_gateway_status(legacy_resp, legacy=True)
+            result = legacy_resp.json()
+            if not isinstance(result, dict) or "segments" not in result:
+                raise GatewayError("云端返回了异常的数据格式。")
+            return result
 
-    result = resp.json()
-    if not isinstance(result, dict) or "segments" not in result:
-        raise GatewayError("云端返回了异常的数据格式。")
-    return result
+        _raise_for_gateway_status(resp)
+        submit_payload = resp.json()
+        job_id = submit_payload.get("job_id") if isinstance(submit_payload, dict) else None
+        if not job_id:
+            raise GatewayError("云端未返回有效的任务 ID（job_id）。")
+
+        status_url = f"{base_url}/transcribe/status/{job_id}"
+        deadline = time.monotonic() + timeout
+        consecutive_transient = 0
+
+        while time.monotonic() < deadline:
+            try:
+                poll_resp = await client.get(status_url, headers=headers, timeout=20.0)
+            except httpx.HTTPError as exc:
+                consecutive_transient += 1
+                if consecutive_transient > 10:
+                    raise GatewayError(f"连续 {consecutive_transient} 次查询云端转录进度失败：{exc}") from exc
+                await asyncio.sleep(3.0)
+                continue
+
+            if poll_resp.status_code in (502, 503, 504, 524):
+                consecutive_transient += 1
+                if consecutive_transient > 10:
+                    _raise_for_gateway_status(poll_resp)
+                await asyncio.sleep(3.0)
+                continue
+
+            if poll_resp.status_code == 404:
+                raise GatewayError("云端转录任务已丢失（可能云端算力已重启），请重新提交。")
+
+            _raise_for_gateway_status(poll_resp)
+            consecutive_transient = 0
+
+            payload = poll_resp.json()
+            if not isinstance(payload, dict):
+                raise GatewayError("云端返回了异常的任务状态格式。")
+
+            status = payload.get("status")
+            if status in ("queued", "running"):
+                if progress_cb is not None:
+                    progress_cb(
+                        float(payload.get("processed_seconds") or 0.0),
+                        float(payload.get("duration") or 0.0),
+                        int(payload.get("segments_done") or 0),
+                    )
+                await asyncio.sleep(2.5)
+                continue
+
+            if status == "done":
+                result = payload.get("result")
+                if not isinstance(result, dict) or "segments" not in result:
+                    raise GatewayError("云端返回了异常的数据格式。")
+                return result
+
+            if status == "error":
+                raise GatewayError(f"云端转录失败：{payload.get('error') or '未知错误'}")
+
+            raise GatewayError(f"云端返回了未知的任务状态：{status}")
+
+        raise GatewayError("云端转录超时，请稍后重试或检查云端算力状态。")
