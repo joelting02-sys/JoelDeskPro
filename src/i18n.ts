@@ -228,6 +228,20 @@ export interface Translations {
     magpieTestAndRefresh: string;
     magpieNoModelsHint: string;
     saveMagpieConfig: string;
+    cookiesTitle: string;
+    cookiesDesc: string;
+    cookiesCount: (n: number) => string;
+    cookiesNotLoggedIn: string;
+    cookiesLoginBtn: string;
+    cookiesLoggingIn: string;
+    cookiesExportTxtBtn: string;
+    cookiesExportAllBtn: string;
+    cookiesImportTxtBtn: string;
+    cookiesClearBtn: string;
+    cookiesImportedMsg: (n: number) => string;
+    cookiesExportedMsg: (path: string, n: number) => string;
+    cookiesClearedMsg: string;
+    cookiesLoginSavedMsg: (label: string, n: number) => string;
   };
   updateModal: {
     title: string;
@@ -481,6 +495,21 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       magpieTestAndRefresh: 'Test & Refresh',
       magpieNoModelsHint: 'No models loaded yet — make sure Magpie is running and click Refresh.',
       saveMagpieConfig: 'Save Settings',
+      cookiesTitle: 'Site Cookies (Douyin / Bilibili / YouTube / Xiaohongshu)',
+      cookiesDesc:
+        'Chrome 127+ encrypts on-disk cookies (App-Bound Encryption), so TDM cannot read Chrome profiles directly. Log in once inside the built-in browser (or import a Netscape cookies.txt) and Joel Desk Pro will attach cookies automatically when sending links to JoelFast — or export cookies.txt anytime.',
+      cookiesCount: (n) => `${n} saved`,
+      cookiesNotLoggedIn: 'Not logged in',
+      cookiesLoginBtn: 'Built-in Login',
+      cookiesLoggingIn: 'Waiting for window…',
+      cookiesExportTxtBtn: 'Export .txt',
+      cookiesExportAllBtn: 'Export All .txt',
+      cookiesImportTxtBtn: 'Import cookies.txt',
+      cookiesClearBtn: 'Clear',
+      cookiesImportedMsg: (n) => `Imported ${n} cookies into Joel Desk Pro.`,
+      cookiesExportedMsg: (p, n) => `Exported ${n} cookies to ${p}`,
+      cookiesClearedMsg: 'Cleared saved site cookies.',
+      cookiesLoginSavedMsg: (label, n) => `${label} updated (${n} cookies saved).`,
     },
     updateModal: {
       title: 'Joel Desk Pro Updates',
@@ -733,6 +762,21 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
       magpieTestAndRefresh: '测试连接并刷新',
       magpieNoModelsHint: '暂未拉取到模型列表，请先确认 Magpie 已在本机启动后点击刷新。',
       saveMagpieConfig: '保存设置',
+      cookiesTitle: '网站 Cookies（抖音 / B站 / YouTube / 小红书）',
+      cookiesDesc:
+        '新版 Chrome 开启了应用绑定加密（ABE），TDM 无法直接读取 Chrome 各 Profile 的本地 Cookies。在下方点一次「内置登录」（或手动导入 Netscape 格式 cookies.txt），之后通过 AI 助手或本软件发送链接给 JoelFast 时都会自动附带 Cookies 和 Referer；也可随时导出 cookies.txt 手动导入 TDM。',
+      cookiesCount: (n) => `已保存 ${n} 条`,
+      cookiesNotLoggedIn: '未登录',
+      cookiesLoginBtn: '内置登录',
+      cookiesLoggingIn: '登录窗口已打开…',
+      cookiesExportTxtBtn: '导出 .txt',
+      cookiesExportAllBtn: '导出全部 .txt',
+      cookiesImportTxtBtn: '导入 cookies.txt',
+      cookiesClearBtn: '清空',
+      cookiesImportedMsg: (n) => `已导入 ${n} 条 Cookies，后续发往 JoelFast 将自动附带。`,
+      cookiesExportedMsg: (p, n) => `已导出 ${n} 条 Cookies 至 ${p}`,
+      cookiesClearedMsg: '已清空已保存的网站 Cookies。',
+      cookiesLoginSavedMsg: (label, n) => `${label} Cookies 已更新（共 ${n} 条）。`,
     },
     updateModal: {
       title: 'Joel Desk Pro 版本更新',

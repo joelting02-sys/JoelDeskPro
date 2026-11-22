@@ -64,4 +64,11 @@ contextBridge.exposeInMainWorld('joelDesktop', {
       return () => ipcRenderer.removeListener('magpie:event', handler);
     },
   },
+  cookies: {
+    getStatus: () => ipcRenderer.invoke('cookies:status'),
+    openLogin: (siteId) => ipcRenderer.invoke('cookies:open-login', siteId),
+    importTxt: () => ipcRenderer.invoke('cookies:import-txt'),
+    exportTxt: (siteId) => ipcRenderer.invoke('cookies:export-txt', siteId),
+    clear: (siteId) => ipcRenderer.invoke('cookies:clear', siteId),
+  },
 });

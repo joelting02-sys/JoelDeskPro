@@ -1,4 +1,4 @@
-const { app, BrowserWindow, clipboard, dialog, ipcMain, screen, shell, Menu } = require('electron');
+const { app, BrowserWindow, clipboard, dialog, ipcMain, screen, session, shell, Menu } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const os = require('node:os');
@@ -8,12 +8,14 @@ const { startLocalEngine } = require('./localEngine.cjs');
 const { createTdmDockManager } = require('./tdmDockManager.cjs');
 const { createWhisperManager } = require('./whisperManager.cjs');
 const { createMagpieChannel } = require('./magpieChannel.cjs');
+const { createSiteCookieManager } = require('./siteCookieManager.cjs');
 
 let mainWindow = null;
 let localEngine = null;
 let tdmDockManager = null;
 let whisperManager = null;
 let magpieChannel = null;
+let siteCookieManager = null;
 let isQuitting = false;
 
 const gotLock = app.requestSingleInstanceLock();
@@ -250,6 +252,24 @@ function registerMagpieIpcHandlers() {
   );
 }
 
+function registerCookieIpcHandlers() {
+  ipcMain.handle('cookies:status', () =>
+    siteCookieManager ? siteCookieManager.getStatus() : { supported: false }
+  );
+  ipcMain.handle('cookies:open-login', (_e, siteId) =>
+    siteCookieManager ? siteCookieManager.openLoginWindow(siteId) : { ok: false }
+  );
+  ipcMain.handle('cookies:import-txt', () =>
+    siteCookieManager ? siteCookieManager.importCookiesTxt() : { ok: false }
+  );
+  ipcMain.handle('cookies:export-txt', (_e, siteId) =>
+    siteCookieManager ? siteCookieManager.exportCookiesTxt(siteId) : { ok: false }
+  );
+  ipcMain.handle('cookies:clear', (_e, siteId) =>
+    siteCookieManager ? siteCookieManager.clearCookies(siteId) : { ok: false }
+  );
+}
+
 app.whenReady().then(() => {
   // Start local health & GitHub self-updater backend (127.0.0.1:17890)
   localEngine = startLocalEngine({
@@ -272,9 +292,18 @@ app.whenReady().then(() => {
   registerTdmIpcHandlers();
   registerWhisperIpcHandlers();
   registerMagpieIpcHandlers();
+  registerCookieIpcHandlers();
 
   magpieChannel = createMagpieChannel({
     mainWindow,
+  });
+
+  siteCookieManager = createSiteCookieManager({
+    mainWindow,
+    BrowserWindow,
+    session,
+    dialog,
+    downloadsDir: getDefaultDownloadsDir(),
   });
 
   tdmDockManager = createTdmDockManager({
@@ -282,6 +311,7 @@ app.whenReady().then(() => {
     dialog,
     screen,
     isPackaged: app.isPackaged,
+    siteCookieManager,
   });
 
   whisperManager = createWhisperManager({

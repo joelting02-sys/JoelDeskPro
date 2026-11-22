@@ -87,6 +87,7 @@ function createTdmDockManager(options = {}) {
   const settingsFile = options.settingsFile || DEFAULT_SETTINGS_FILE;
   const hostHwndOverride = options.hostHwnd || null;
   const onActivated = typeof options.onActivated === 'function' ? options.onActivated : null;
+  const siteCookieManager = options.siteCookieManager || null;
 
   const isSupported = process.platform === 'win32';
 
@@ -605,11 +606,27 @@ function createTdmDockManager(options = {}) {
     }
 
     const endpoint = `http://127.0.0.1:${settings.tdm_capture_port}/capture`;
-    const bodyJson = JSON.stringify({
+    let cookieMatch = { cookies: [], referer: '' };
+    if (siteCookieManager && typeof siteCookieManager.getCookiesForUrl === 'function') {
+      try {
+        const resMatch = await siteCookieManager.getCookiesForUrl(url);
+        if (resMatch && Array.isArray(resMatch.cookies)) {
+          cookieMatch = resMatch;
+        }
+      } catch {}
+    }
+
+    const effectiveReferer = payload.referer || cookieMatch.referer || undefined;
+    const bodyObj = {
       url,
       filename: payload.filename || payload.fileName || undefined,
-      referer: payload.referer || undefined,
-    });
+      referer: effectiveReferer,
+      headers: effectiveReferer ? { Referer: effectiveReferer } : undefined,
+    };
+    if (cookieMatch.cookies.length > 0) {
+      bodyObj.cookies = cookieMatch.cookies;
+    }
+    const bodyJson = JSON.stringify(bodyObj);
 
     for (let attempt = 0; attempt < 12; attempt++) {
       try {
@@ -619,7 +636,7 @@ function createTdmDockManager(options = {}) {
           body: bodyJson,
         });
         if (res.ok) {
-          return { ok: true };
+          return { ok: true, cookiesAttached: cookieMatch.cookies.length };
         }
       } catch {}
       await new Promise((r) => setTimeout(r, 400));

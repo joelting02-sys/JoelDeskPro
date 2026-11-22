@@ -10,6 +10,7 @@
 | --- | --- |
 | **Magpie AI 通道** | 主进程直连本地 Magpie 网关（默认 `http://127.0.0.1:3425/v1`），自动拉取模型列表并流式输出正文与思考过程；也可切换任意 OpenAI 兼容接口。 |
 | **JoelFast 高速下载** | 内嵌多线程高速下载器并桥接本机端口；自动清理抖音 / TikTok / B 站 / 小红书 / YouTube 分享口令中的前后杂字与符号，提取纯净链接直发下载。 |
+| **内置站点 Cookies** | 在「设置 → 网站 Cookies」内置登录一次抖音 / B 站 / YouTube / 小红书，或导入 `cookies.txt`，发往 JoelFast 时自动附带登录态 Cookies 与 `Referer`，也可随时导出 `.txt` 手动导入（不受 Chrome ABE 加密影响）。 |
 | **Cloud Whisper Studio** | 内嵌云端转录服务（默认端口 `8788`），支持 Colab T4 / Kaggle T4 调度 `faster-whisper`（`fast` / `balanced` / `accurate`），视频自动抽离 `16kHz` 音轨后异步轮询出稿（`srt` / `md` / `txt`）。 |
 | **格式转换工作台** | 支持常见文档（`PDF` / `Word` / `Markdown` / `PNG` / `TXT`）与音视频格式快速转换。 |
 | **自更新机制** | 自动比对 `joelting02-sys/JoelDeskPro` GitHub Releases；新版安装包（`.exe`）默认下载至系统 **Downloads（下载）** 目录并拉起安装，不占用桌面。 |

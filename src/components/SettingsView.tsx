@@ -1,17 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   AlertCircle,
   Check,
+  Cookie,
+  Download,
   Eye,
   EyeOff,
   Loader2,
+  LogIn,
   Plug,
   RefreshCw,
   Save,
   Sparkles,
+  Trash2,
+  Upload,
 } from 'lucide-react';
 import { EndpointConfig, MagpieSettings, MagpieStatus } from '../types/toolkit';
 import { testLlmEndpointConnection } from '../services/toolkitAdapter';
+import { SiteCookieStatus } from '../services/tdmBridge';
 import { AppLanguage, TRANSLATIONS } from '../i18n';
 
 interface SettingsViewProps {
@@ -71,6 +77,106 @@ export function SettingsView({
     latencyMs: number;
     detail: string;
   } | null>(null);
+  const cookieApi = typeof window !== 'undefined' ? window.joelDesktop?.cookies : undefined;
+  const [cookieStatus, setCookieStatus] = useState<SiteCookieStatus | null>(null);
+  const [loggingInSite, setLoggingInSite] = useState<string | null>(null);
+  const [cookieBusy, setCookieBusy] = useState(false);
+  const [cookieNotice, setCookieNotice] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const loadCookieStatus = useCallback(async () => {
+    if (!cookieApi) return;
+    try {
+      const st = await cookieApi.getStatus();
+      if (st?.supported) {
+        setCookieStatus(st);
+      }
+    } catch {}
+  }, [cookieApi]);
+
+  useEffect(() => {
+    loadCookieStatus();
+  }, [loadCookieStatus]);
+
+  const handleOpenSiteLogin = async (siteId: string, siteLabel: string) => {
+    if (!cookieApi) return;
+    setLoggingInSite(siteId);
+    setCookieNotice(null);
+    try {
+      const res = await cookieApi.openLogin(siteId);
+      if (res?.status) {
+        setCookieStatus(res.status);
+        const entry = res.status.sites.find((s) => s.id === siteId);
+        setCookieNotice({
+          ok: Boolean(res.ok),
+          text: res.ok
+            ? t.cookiesLoginSavedMsg(siteLabel, entry?.count ?? 0)
+            : res.error || 'Failed',
+        });
+      } else if (!res?.ok && res?.error) {
+        setCookieNotice({ ok: false, text: res.error });
+      }
+    } finally {
+      setLoggingInSite(null);
+    }
+  };
+
+  const handleImportCookiesTxt = async () => {
+    if (!cookieApi) return;
+    setCookieBusy(true);
+    setCookieNotice(null);
+    try {
+      const res = await cookieApi.importTxt();
+      if (res?.canceled) return;
+      if (res?.status) setCookieStatus(res.status);
+      if (res?.ok) {
+        setCookieNotice({
+          ok: true,
+          text: t.cookiesImportedMsg(res.importedCount ?? 0),
+        });
+      } else {
+        setCookieNotice({ ok: false, text: res?.error || 'Import failed' });
+      }
+    } finally {
+      setCookieBusy(false);
+    }
+  };
+
+  const handleExportCookiesTxt = async (siteId?: string) => {
+    if (!cookieApi) return;
+    setCookieBusy(true);
+    setCookieNotice(null);
+    try {
+      const res = await cookieApi.exportTxt(siteId);
+      if (res?.canceled) return;
+      if (res?.ok && res.path) {
+        setCookieNotice({
+          ok: true,
+          text: t.cookiesExportedMsg(res.path, res.count ?? 0),
+        });
+      } else {
+        setCookieNotice({ ok: false, text: res?.error || 'Export failed' });
+      }
+    } finally {
+      setCookieBusy(false);
+    }
+  };
+
+  const handleClearCookies = async () => {
+    if (!cookieApi) return;
+    setCookieBusy(true);
+    setCookieNotice(null);
+    try {
+      const res = await cookieApi.clear();
+      if (res?.status) setCookieStatus(res.status);
+      if (res?.ok) {
+        setCookieNotice({ ok: true, text: t.cookiesClearedMsg });
+      } else {
+        setCookieNotice({ ok: false, text: res?.error || 'Clear failed' });
+      }
+    } finally {
+      setCookieBusy(false);
+    }
+  };
 
   useEffect(() => {
     setForm(config);
@@ -583,6 +689,139 @@ export function SettingsView({
             </div>
           )}
         </section>
+
+        {cookieApi && (
+          <section className="mt-5 rounded-panel border border-[#E5E7EB] bg-white p-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Cookie className="h-4 w-4 text-[#2563EB]" />
+                  <h2 className="text-[16px] font-semibold text-[#0F172A]">{t.cookiesTitle}</h2>
+                </div>
+                <p className="mt-1 text-[13px] leading-relaxed text-[#64748B]">
+                  {t.cookiesDesc}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={loadCookieStatus}
+                disabled={cookieBusy}
+                className="inline-flex items-center gap-1 text-[12px] font-medium text-[#2563EB] hover:text-[#1D4ED8] disabled:opacity-50 whitespace-nowrap"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${cookieBusy ? 'animate-spin' : ''}`} />
+                {t.magpieRefreshModels}
+              </button>
+            </div>
+
+            <div className="mt-4 divide-y divide-[#E5E7EB] rounded-control border border-[#E5E7EB] bg-[#F8F9FA]">
+              {(cookieStatus?.sites || []).map((site) => {
+                const isLoggingThis = loggingInSite === site.id;
+                return (
+                  <div
+                    key={site.id}
+                    className="flex flex-wrap items-center justify-between gap-3 px-3.5 py-2.5"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="text-[13px] font-medium text-[#0F172A]">{site.label}</span>
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-inner px-2 py-0.5 font-mono text-[11px] font-medium ${
+                          site.hasCookies
+                            ? 'bg-[#F0FDF4] text-[#15803D]'
+                            : 'bg-[#E2E8F0] text-[#475569]'
+                        }`}
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 rounded-full ${
+                            site.hasCookies ? 'bg-[#16A34A]' : 'bg-[#64748B]'
+                          }`}
+                        />
+                        {site.hasCookies ? t.cookiesCount(site.count) : t.cookiesNotLoggedIn}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {site.count > 0 && (
+                        <button
+                          type="button"
+                          disabled={cookieBusy}
+                          onClick={() => handleExportCookiesTxt(site.id)}
+                          className="inline-flex items-center gap-1 rounded-inner border border-[#E5E7EB] bg-white px-2.5 py-1 text-[12px] font-medium text-[#475569] hover:border-[#2563EB] hover:text-[#2563EB] disabled:opacity-50 whitespace-nowrap"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          {t.cookiesExportTxtBtn}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={cookieBusy}
+                        onClick={() => handleOpenSiteLogin(site.id, site.label)}
+                        className="inline-flex items-center gap-1.5 rounded-inner bg-[#2563EB] px-3 py-1 text-[12px] font-medium text-white hover:bg-[#1D4ED8] disabled:opacity-60 whitespace-nowrap"
+                      >
+                        {isLoggingThis ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <LogIn className="h-3.5 w-3.5" />
+                        )}
+                        {isLoggingThis ? t.cookiesLoggingIn : t.cookiesLoginBtn}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {cookieNotice && (
+              <div
+                className={`mt-3 flex items-center gap-2 rounded-control border px-3 py-2 text-[12px] ${
+                  cookieNotice.ok
+                    ? 'border-[#BBF7D0] bg-[#F0FDF4] text-[#15803D]'
+                    : 'border-[#FECACA] bg-[#FEF2F2] text-[#B91C1C]'
+                }`}
+              >
+                {cookieNotice.ok ? (
+                  <Check className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                )}
+                <span className="break-all">{cookieNotice.text}</span>
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2.5 border-t border-[#E5E7EB] pt-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={cookieBusy}
+                  onClick={handleImportCookiesTxt}
+                  className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:border-[#2563EB] hover:text-[#2563EB] disabled:opacity-50 whitespace-nowrap"
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  {t.cookiesImportTxtBtn}
+                </button>
+                <button
+                  type="button"
+                  disabled={cookieBusy || !(cookieStatus?.totalCount)}
+                  onClick={() => handleExportCookiesTxt()}
+                  className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:border-[#2563EB] hover:text-[#2563EB] disabled:opacity-50 whitespace-nowrap"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  {t.cookiesExportAllBtn}
+                </button>
+              </div>
+
+              <button
+                type="button"
+                disabled={cookieBusy || !(cookieStatus?.totalCount)}
+                onClick={handleClearCookies}
+                className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#64748B] hover:border-[#FECACA] hover:text-[#B91C1C] disabled:opacity-50 whitespace-nowrap"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {t.cookiesClearBtn}
+              </button>
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

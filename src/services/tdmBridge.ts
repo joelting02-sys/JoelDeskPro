@@ -39,6 +39,20 @@ export interface LocalEngineStatus {
   packaged?: boolean;
 }
 
+export interface SiteCookieEntry {
+  id: string;
+  label: string;
+  count: number;
+  hasCookies: boolean;
+}
+
+export interface SiteCookieStatus {
+  supported: boolean;
+  totalCount: number;
+  updatedAt: string;
+  sites: SiteCookieEntry[];
+}
+
 declare global {
   interface JoelDesktopApi {
     isDesktop: boolean;
@@ -70,8 +84,37 @@ declare global {
         url: string;
         filename?: string;
         referer?: string;
-      }) => Promise<{ ok: boolean; needsExe?: boolean; error?: string }>;
+      }) => Promise<{ ok: boolean; needsExe?: boolean; cookiesAttached?: number; error?: string }>;
       onEvent: (listener: (event: TdmEvent) => void) => () => void;
+    };
+    cookies?: {
+      getStatus: () => Promise<SiteCookieStatus>;
+      openLogin: (siteId: string) => Promise<{
+        ok: boolean;
+        reused?: boolean;
+        error?: string;
+        status?: SiteCookieStatus;
+      }>;
+      importTxt: () => Promise<{
+        ok: boolean;
+        canceled?: boolean;
+        importedCount?: number;
+        filePath?: string;
+        error?: string;
+        status?: SiteCookieStatus;
+      }>;
+      exportTxt: (siteId?: string) => Promise<{
+        ok: boolean;
+        canceled?: boolean;
+        path?: string;
+        count?: number;
+        error?: string;
+      }>;
+      clear: (siteId?: string) => Promise<{
+        ok: boolean;
+        error?: string;
+        status?: SiteCookieStatus;
+      }>;
     };
   }
 
