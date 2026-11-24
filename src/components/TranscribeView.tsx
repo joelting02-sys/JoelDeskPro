@@ -19,7 +19,6 @@ interface TranscribeViewProps {
   onStart: () => void;
   onRestart: () => void;
   onPickDir: () => void;
-  onOpenSettings: () => void;
   onOpenStandalone: () => void;
   onWhisperSnapshotSync?: (snapshot: {
     compute?: Record<string, unknown>;
@@ -36,7 +35,6 @@ export function TranscribeView({
   onStart,
   onRestart,
   onPickDir,
-  onOpenSettings,
   onOpenStandalone,
   onWhisperSnapshotSync,
 }: TranscribeViewProps) {
@@ -271,13 +269,6 @@ export function TranscribeView({
             >
               <FolderOpen className="h-4 w-4" />
               {t.pickDirBtn}
-            </button>
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3.5 py-2 text-[13px] font-medium text-[#475569] hover:text-[#0F172A] whitespace-nowrap"
-            >
-              {t.openSettingsBtn}
             </button>
           </div>
         </div>

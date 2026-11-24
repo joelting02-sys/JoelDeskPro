@@ -3,43 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Joel Desk Pro — AI Agent &amp; Personal Productivity Workbench</title>
-    <link
-      rel="icon"
-      type="image/svg+xml"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='3' y='3' width='58' height='58' rx='16' fill='%23FFFFFF' stroke='%232563EB' stroke-width='3.2'/%3E%3Cpath d='M31.5 16.5H45.5V20.2C42.9 20.6 41.8 21.7 41.8 24.6V37.6C41.8 45.2 36.7 49.8 28.9 49.8C23.5 49.8 19.6 47.2 18.4 43.7C17.9 42.1 18.6 40.2 20.4 39.7C22 39.3 23.6 40.2 24.3 41.9C25.2 44.1 26.8 45.5 29.3 45.5C33.4 45.5 35.4 42.8 35.4 37.4V24.6C35.4 21.7 34.3 20.6 31.5 20.2V16.5Z' fill='%232563EB'/%3E%3C/svg%3E"
-    />
+    <title>Joel Desk Pro — Cloud Whisper Studio</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='3' y='3' width='58' height='58' rx='16' fill='%23FFFFFF' stroke='%232563EB' stroke-width='3.2'/%3E%3Cpath d='M31.5 16.5H45.5V20.2C42.9 20.6 41.8 21.7 41.8 24.6V37.6C41.8 45.2 36.7 49.8 28.9 49.8C23.5 49.8 19.6 47.2 18.4 43.7C17.9 42.1 18.6 40.2 20.4 39.7C22 39.3 23.6 40.2 24.3 41.9C25.2 44.1 26.8 45.5 29.3 45.5C33.4 45.5 35.4 42.8 35.4 37.4V24.6C35.4 21.7 34.3 20.6 31.5 20.2V16.5Z' fill='%232563EB'/%3E%3C/svg%3E" />
     <meta
       name="description"
-      content="Joel Desk Pro minimalist desktop AI Agent productivity workbench featuring cloud GPU transcription, multi-chunk high-speed downloads with Chrome extension, and format conversion."
+      content="Joel Desk Pro — Dedicated desktop workbench for Cloud Whisper Studio GPU transcription."
     />
-    <meta property="og:title" content="Joel Desk Pro — AI Agent &amp; Personal Productivity Workbench" />
+    <meta property="og:title" content="Joel Desk Pro — Cloud Whisper Studio" />
     <meta
       property="og:description"
-      content="Joel Desk Pro minimalist desktop AI Agent productivity workbench featuring cloud GPU transcription, multi-chunk high-speed downloads with Chrome extension, and format conversion."
+      content="Joel Desk Pro — Dedicated desktop workbench for Cloud Whisper Studio GPU transcription."
     />
-    <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
-    <script>
-      window.addEventListener(
-        'error',
-        function (event) {
-          if (event && typeof event.filename === 'string' && event.filename.indexOf('chrome-extension://') === 0) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-          }
-        },
-        true
-      );
-    </script>
   </head>
-  <body class="bg-[#F8F9FA] text-[#0F172A] antialiased selection:bg-[#2563EB]/15 selection:text-[#1D4ED8]">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

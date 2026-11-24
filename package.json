@@ -1,8 +1,8 @@
 ﻿{
   "name": "joel-desk-pro",
   "private": true,
-  "version": "1.4.10",
-  "description": "Joel Desk Pro 鈥?AI Agent & Personal Productivity Workbench",
+  "version": "1.5.0",
+  "description": "Joel Desk Pro — Cloud Whisper Studio Desktop",
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {

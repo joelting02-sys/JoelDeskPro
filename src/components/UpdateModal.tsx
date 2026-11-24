@@ -12,24 +12,26 @@ import {
   Terminal,
   X,
 } from 'lucide-react';
-import { EndpointConfig } from '../types/toolkit';
 import {
   APP_VERSION,
+  DEFAULT_GITHUB_BRANCH,
+  DEFAULT_GITHUB_REPO,
   GitHubUpdateInfo,
   LocalUpdateResult,
   buildUnixUpdateScript,
   buildWindowsUpdateScript,
   formatGitHubTime,
   getGitPullCommand,
+  triggerClientFileDownload,
 } from '../services/githubUpdater';
-import { triggerClientFileDownload } from '../services/toolkitAdapter';
 import { AppLanguage, TRANSLATIONS } from '../i18n';
 
 interface UpdateModalProps {
   lang: AppLanguage;
   open: boolean;
   onClose: () => void;
-  config: EndpointConfig;
+  repo?: string;
+  branch?: string;
   localEngineOnline: boolean;
   localEnginePackaged?: boolean;
   updateInfo: GitHubUpdateInfo | null;
@@ -47,7 +49,8 @@ export function UpdateModal({
   lang,
   open,
   onClose,
-  config,
+  repo = DEFAULT_GITHUB_REPO,
+  branch = DEFAULT_GITHUB_BRANCH,
   localEngineOnline,
   localEnginePackaged = false,
   updateInfo,
@@ -67,8 +70,6 @@ export function UpdateModal({
 
   if (!open) return null;
 
-  const repo = config.githubRepo || 'joelting02-sys/JoelDeskPro';
-  const branch = config.githubBranch || 'main';
   const pullCmd = getGitPullCommand(repo, branch);
 
   const handleDownloadWinScript = () => {

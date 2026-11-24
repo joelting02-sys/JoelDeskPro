@@ -22,102 +22,25 @@ export function saveLanguage(lang: AppLanguage): void {
 
 export interface Translations {
   documentTitle: string;
-  views: {
-    agent: string;
-    transcribe: string;
-    download: string;
-    convert: string;
-    settings: string;
-  };
-  sidebar: {
-    closeSidebar: string;
-    openSidebar: string;
-    primaryNav: string;
-    smartDispatch: string;
-    manualWorkbenches: string;
-    activeTasks: string;
-    checkUpdates: string;
-    newVersion: string;
-  };
-  topbar: {
-    newChat: string;
-    clearCompleted: string;
+  header: {
+    appTitle: string;
+    updateBtn: string;
+    updateAvailable: string;
   };
   toasts: {
     copied: (label: string) => string;
-    newChatStarted: string;
-    clearedConversions: string;
-    videoAudioQueued: string;
-    cloudTranscribeQueued: string;
-    whisperDirSelected: (name: string) => string;
-    whisperRestarted: string;
-    whisperOpenedStandalone: string;
-    whisperBackendFailed: string;
-    whisperDropFilePrompt: string;
-    tdmDispatched: string;
-    tdmDispatchFailed: string;
-    tdmMissingExe: string;
-    tdmExeSelected: (name: string) => string;
-    tdmDownloaded: (name: string) => string;
-    tdmDownloadFailed: string;
-    tdmDetached: string;
-    tdmReattached: string;
-    tdmActivatedFromExt: string;
-    foundGitHubCommit: (sha: string) => string;
-    alreadyLatest: string;
-    checkUpdateFailed: string;
-    localUpdated: string;
-    convertingTo: (fmt: string) => string;
-    batchConvertStarted: string;
-    configSaved: string;
-    cleanUrlLabel: string;
     terminalCmdLabel: string;
-    mdPlainLabel: string;
-    srtLabel: string;
-    magpieSaved: string;
-    magpieRefreshed: (count: number) => string;
-    magpieOffline: string;
-    magpieStopped: string;
-  };
-  agent: {
-    dropTitle: string;
-    dropSubtitle: string;
-    welcomeTitle: string;
-    welcomeSubtitle: string;
-    extractedLink: string;
-    detectedLink: string;
-    copyUrl: string;
-    videoAutoExtract: string;
-    audioTag: string;
-    docTag: string;
-    removeFile: (name: string) => string;
-    addFiles: string;
-    addFilesTitle: string;
-    placeholder: string;
-    sendCommand: string;
-    downloadDispatch: string;
-    addedToDownload: string;
-    sendToDownload: string;
-    cloudTranscribe: string;
-    videoSourceHint: string;
-    audioSourceHint: string;
-    mdPlainLabel: string;
-    transcribeStarted: string;
-    startCloudTranscribe: string;
-    docConvert: string;
-    convertStarted: string;
-    startConvert: string;
-    activeLocalRouter: string;
-    activeCustomModel: (model: string) => string;
-    thinkingCustomLlm: (model: string) => string;
-    magpieConnected: string;
-    magpieDisconnected: string;
-    customApiLabel: string;
-    refreshModels: string;
-    stopRun: string;
-    thinkingTitle: string;
-    streamingLabel: string;
-    settingsLink: string;
+    whisperDirSaved: (name: string) => string;
+    whisperStarted: string;
+    whisperRestarted: string;
+    whisperStartFailed: (detail?: string) => string;
+    whisperStandaloneOpened: string;
+    updateFound: (tag: string) => string;
+    upToDate: string;
+    updateCheckFailed: (detail: string) => string;
+    updatePullSuccess: (msg: string) => string;
+    updatePullFailed: (msg: string) => string;
+    reloading: string;
   };
   transcribe: {
     webOnlyTitle: string;
@@ -126,7 +49,6 @@ export interface Translations {
     missingDirTitle: string;
     missingDirDesc: string;
     pickDirBtn: string;
-    openSettingsBtn: string;
     startingTitle: string;
     startingDesc: string;
     readyTitle: string;
@@ -144,127 +66,15 @@ export interface Translations {
     statusOffline: string;
     desktopBridgeUnavailable: string;
   };
-  download: {
-    webOnlyTitle: string;
-    webOnlyDesc: string;
-    missingExeTitle: string;
-    missingExeDesc: string;
-    downloadTdmBtn: string;
-    downloadTdmStatus: string;
-    downloadTdmFailed: string;
-    pickExeBtn: string;
-    openSettingsBtn: string;
-    startingTitle: string;
-    startingDesc: string;
-    detachedTitle: string;
-    detachedDesc: string;
-    reattachBtn: string;
-    hiddenTitle: string;
-    hiddenDesc: string;
-    readyTitle: string;
-    readyDesc: string;
-    restoreBtn: string;
-    launchAndDockBtn: string;
-    relaunchBtn: string;
-    changeExeBtn: string;
-    dockedUnderlayHint: string;
-    resyncBtn: string;
-    detachBtn: string;
-    statusDocked: string;
-    statusDetached: string;
-    statusHidden: string;
-  };
-  convert: {
-    presets: {
-      auto: string;
-      pdfDocx: string;
-      docxPdf: string;
-      pdfPng: string;
-      mdPdf: string;
-    };
-    dropTitle: string;
-    dropHint: string;
-    queueTitle: string;
-    itemCount: (n: number) => string;
-    startAllReady: (n: number) => string;
-    emptyQueue: string;
-    selectFormatAria: string;
-    convertBtn: string;
-    converting: string;
-    exportExt: (ext: string) => string;
-    removeFile: string;
-    outputHeader: (source: string, target: string) => string;
-  };
-  settings: {
-    llmTitle: string;
-    llmDesc: string;
-    modeMock: string;
-    modeCustom: string;
-    localRouterNoticeTitle: string;
-    localRouterNoticeDesc: string;
-    quickPresetsLabel: string;
-    baseUrl: string;
-    modelId: string;
-    apiKeyLabel: string;
-    apiKeyPlaceholder: string;
-    showKey: string;
-    hideKey: string;
-    systemPromptLabel: string;
-    systemPromptPlaceholder: string;
-    testing: string;
-    testedOk: (latencyMs: number, detail: string) => string;
-    testFailed: (detail: string) => string;
-    validateEndpoint: string;
-    saveConfig: string;
-    channelTitle: string;
-    channelDesc: string;
-    modeMagpie: string;
-    magpieBadgeOnline: (count: number) => string;
-    magpieBadgeOffline: string;
-    magpieBaseUrlLabel: string;
-    magpieTokenLabel: string;
-    magpieModelLabel: string;
-    magpieRefreshModels: string;
-    magpieTestAndRefresh: string;
-    magpieNoModelsHint: string;
-    saveMagpieConfig: string;
-    cookiesTitle: string;
-    cookiesDesc: string;
-    cookiesCount: (n: number) => string;
-    cookiesNotLoggedIn: string;
-    cookiesLoginBtn: string;
-    cookiesLoggingIn: string;
-    cookiesExportTxtBtn: string;
-    cookiesExportAllBtn: string;
-    cookiesImportTxtBtn: string;
-    cookiesClearBtn: string;
-    cookiesImportedMsg: (n: number) => string;
-    cookiesExportedMsg: (path: string, n: number) => string;
-    cookiesClearedMsg: string;
-    cookiesLoginSavedMsg: (label: string, n: number) => string;
-  };
   updateModal: {
     title: string;
     close: string;
-    currentVersion: (v: string) => string;
-    localCommit: (sha: string) => string;
     checking: string;
-    checkGitHub: string;
     newVersionFound: (tag: string) => string;
     upToDate: (tag: string) => string;
-    latestCommitPrefix: string;
     viewCommits: string;
     downloadZip: string;
-    privateRepoNotice: string;
-    clickCheckHint: (repo: string) => string;
-    pullTitle: string;
-    pullOnlineDesc: string;
-    pullOfflineDesc: string;
-    modeLocalOnline: string;
-    modeWeb: string;
     pullingLocal: string;
-    pullNowBtn: string;
-    winScriptPrimary: string;
     winScriptSecondary: string;
     unixScript: string;
     copyPullCmd: string;
@@ -276,267 +86,65 @@ export interface Translations {
 
 export const TRANSLATIONS: Record<AppLanguage, Translations> = {
   en: {
-    documentTitle: 'Joel Desk Pro — AI Agent & Personal Productivity Workbench',
-    views: {
-      agent: 'AI Agent',
-      transcribe: 'Transcription',
-      download: 'Downloader',
-      convert: 'Converter',
-      settings: 'AI Model Settings',
-    },
-    sidebar: {
-      closeSidebar: 'Close sidebar',
-      openSidebar: 'Open sidebar',
-      primaryNav: 'Primary navigation',
-      smartDispatch: 'Assistant',
-      manualWorkbenches: 'Workbenches',
-      activeTasks: 'Active Tasks',
-      checkUpdates: 'Updates',
-      newVersion: 'New',
-    },
-    topbar: {
-      newChat: 'New Chat',
-      clearCompleted: 'Clear Completed',
+    documentTitle: 'Joel Desk Pro — Cloud Whisper Studio',
+    header: {
+      appTitle: 'Joel Desk Pro',
+      updateBtn: 'Updates',
+      updateAvailable: 'Update available',
     },
     toasts: {
       copied: (label) => `Copied ${label}`,
-      newChatStarted: 'Started a new conversation',
-      clearedConversions: 'Cleared completed conversions',
-      videoAudioQueued: 'Video sent to Cloud Whisper Studio (auto audio extraction)',
-      cloudTranscribeQueued: 'Audio submitted to Cloud Whisper Studio queue',
-      whisperDirSelected: (name) => `Selected Whisper Studio folder: ${name}`,
-      whisperRestarted: 'Cloud Whisper Studio service restarted',
-      whisperOpenedStandalone: 'Opened Cloud Whisper Studio in standalone window',
-      whisperBackendFailed: 'Could not start or reach Cloud Whisper Studio backend',
-      whisperDropFilePrompt: 'Drop your audio or video file into Cloud Whisper Studio',
-      tdmDispatched: 'Sent link to JoelFast',
-      tdmDispatchFailed: 'Could not reach the JoelFast capture port',
-      tdmMissingExe: 'Select your local JoelFast .exe in Downloader first',
-      tdmExeSelected: (name) => `Selected JoelFast executable: ${name}`,
-      tdmDownloaded: (name) => `Downloaded JoelFast from GitHub: ${name}`,
-      tdmDownloadFailed: 'Could not download the JoelFast package from GitHub',
-      tdmDetached: 'Detached JoelFast into standalone window',
-      tdmReattached: 'Docked JoelFast back into Downloader view',
-      tdmActivatedFromExt: 'JoelFast activated — switched to Downloader view',
-      foundGitHubCommit: (sha) => `New GitHub commit available (${sha})`,
-      alreadyLatest: 'Already on the latest GitHub commit',
-      checkUpdateFailed: 'Update check failed',
-      localUpdated: 'Local client updated to latest GitHub version',
-      convertingTo: (fmt) => `Converting to ${fmt}`,
-      batchConvertStarted: 'Started batch format conversion',
-      configSaved: 'AI model settings saved & synced',
-      cleanUrlLabel: 'clean URL',
       terminalCmdLabel: 'update command',
-      mdPlainLabel: 'plain Markdown',
-      srtLabel: 'SRT subtitles',
-      magpieSaved: 'Magpie channel settings saved',
-      magpieRefreshed: (count) => `Loaded ${count} Magpie models`,
-      magpieOffline: 'Magpie is offline — start Magpie on your PC first',
-      magpieStopped: 'Stopped current reply',
-    },
-    agent: {
-      dropTitle: 'Drop files to analyze automatically',
-      dropSubtitle:
-        'Supports audio/video transcription (auto audio extraction) and document conversion',
-      welcomeTitle: 'Drop a link or file, and tell me what to do',
-      welcomeSubtitle:
-        'Links are cleaned for JoelFast automatically, media routes into Cloud Whisper Studio — or switch directly on the left.',
-      extractedLink: 'Extracted link',
-      detectedLink: 'Detected link',
-      copyUrl: 'Copy URL',
-      videoAutoExtract: 'Video · Auto audio extract',
-      audioTag: 'Audio',
-      docTag: 'Document',
-      removeFile: (name) => `Remove ${name}`,
-      addFiles: 'Attach files',
-      addFilesTitle: 'Attach audio, video, or documents',
-      placeholder: 'Paste a URL, drop audio/video/documents, or type an instruction…',
-      sendCommand: 'Send',
-      downloadDispatch: 'Send to Downloader',
-      addedToDownload: 'Sent · Open JoelFast',
-      sendToDownload: 'Download in JoelFast',
-      cloudTranscribe: 'Cloud Whisper Studio',
-      videoSourceHint: 'Video · Auto-extract audio',
-      audioSourceHint: 'Audio source',
-      mdPlainLabel: 'MD Plain',
-      transcribeStarted: 'Submitted · Open Studio',
-      startCloudTranscribe: 'Send to Whisper Studio',
-      docConvert: 'Format Conversion',
-      convertStarted: 'Converting · View',
-      startConvert: 'Start Conversion',
-      activeLocalRouter: 'Built-in Local Router',
-      activeCustomModel: (model) => `Model: ${model}`,
-      thinkingCustomLlm: (model) => `Waiting for ${model}…`,
-      magpieConnected: 'Magpie Connected',
-      magpieDisconnected: 'Magpie Offline',
-      customApiLabel: 'Custom API',
-      refreshModels: 'Refresh models',
-      stopRun: 'Stop',
-      thinkingTitle: 'Reasoning',
-      streamingLabel: 'Generating…',
-      settingsLink: 'Channel Settings',
+      whisperDirSaved: (name) => `Selected Whisper project: ${name}`,
+      whisperStarted: 'Cloud Whisper Studio started',
+      whisperRestarted: 'Cloud Whisper Studio restarted',
+      whisperStartFailed: (detail) =>
+        detail ? `Failed to start Cloud Whisper Studio: ${detail}` : 'Failed to start Cloud Whisper Studio',
+      whisperStandaloneOpened: 'Opened Cloud Whisper Studio in browser',
+      updateFound: (tag) => `New version available (${tag})`,
+      upToDate: 'Already up to date',
+      updateCheckFailed: (detail) => `Update check failed: ${detail}`,
+      updatePullSuccess: (msg) => msg,
+      updatePullFailed: (msg) => msg,
+      reloading: 'Reloading client…',
     },
     transcribe: {
-      webOnlyTitle: 'Cloud Whisper Studio Not Detected',
+      webOnlyTitle: 'Cloud Whisper Studio Backend Offline',
       webOnlyDesc: (url) =>
-        `Launch Cloud Whisper Studio locally at ${url} or use the Joel Desk Pro Windows desktop app (.exe) to auto-start and embed it directly here.`,
+        `Start the Cloud Whisper Studio desktop app or run its backend on ${url}, then click Retry.`,
       retryProbeBtn: 'Retry Connection',
       missingDirTitle: 'Locate Cloud Whisper Studio Folder',
       missingDirDesc:
-        'Select your local cloud-whisper-studio project folder once. After that, Joel Desk Pro automatically starts and embeds your Colab / Kaggle transcription studio here.',
+        'Select your local cloud-whisper-studio folder so Joel Desk Pro can launch and embed it automatically.',
       pickDirBtn: 'Select Project Folder',
-      openSettingsBtn: 'Home AI Settings',
       startingTitle: 'Starting Cloud Whisper Studio…',
-      startingDesc: 'Launching local FastAPI + ffmpeg backend and loading your GPU workspace.',
-      readyTitle: 'Cloud Whisper Studio Stopped',
-      readyDesc: 'Click below to launch and embed Cloud Whisper Studio in this workspace.',
-      startBtn: 'Start Whisper Studio',
+      startingDesc:
+        'Launching Python backend on 127.0.0.1:8788 and loading transcription UI.',
+      readyTitle: 'Cloud Whisper Studio is Stopped',
+      readyDesc:
+        'Start the embedded Cloud Whisper Studio service to connect Colab / Kaggle T4 GPUs and transcribe audio or video.',
+      startBtn: 'Start & Load',
       retryStartBtn: 'Retry Start',
       restartBtn: 'Restart Service',
       changeDirBtn: 'Change Folder',
-      openStandaloneBtn: 'Pop Out Standalone',
-      reloadUiBtn: 'Refresh UI',
-      restartServiceBtn: 'Restart Service',
-      statusGpuOnline: (gpu) => `GPU Ready · ${gpu}`,
+      openStandaloneBtn: 'Open in Browser',
+      reloadUiBtn: 'Reload UI',
+      restartServiceBtn: 'Restart',
+      statusGpuOnline: (gpu) => `GPU Online · ${gpu}`,
       statusServiceOnline: 'Service Online',
       statusStarting: 'Starting…',
-      statusOffline: 'Stopped',
-      desktopBridgeUnavailable: 'Desktop save dialog is only available in Joel Desk Pro desktop app',
-    },
-    download: {
-      webOnlyTitle: 'Windows Desktop Only',
-      webOnlyDesc:
-        'JoelFast native window docking runs inside the Joel Desk Pro Windows desktop app (.exe). Launch the Windows client to dock JoelFast here.',
-      missingExeTitle: 'Locate JoelFast Executable',
-      missingExeDesc:
-        'Select your local JoelFast .exe once. After that, opening Downloader automatically launches and docks JoelFast into this panel, while your browser extension keeps working as before.',
-      downloadTdmBtn: 'Download JoelFast from GitHub',
-      downloadTdmStatus: 'Downloading JoelFast from GitHub…',
-      downloadTdmFailed: 'Could not download the JoelFast package. Please try again.',
-      pickExeBtn: 'Select JoelFast (.exe)',
-      openSettingsBtn: 'Open Settings',
-      startingTitle: 'Launching & Docking JoelFast…',
-      startingDesc: 'Waiting for the native JoelFast window and aligning inside workbench bounds.',
-      detachedTitle: 'JoelFast Detached to Standalone Window',
-      detachedDesc: 'JoelFast is currently running in its own independent window.',
-      reattachBtn: 'Dock Back Inside Desk Pro',
-      hiddenTitle: 'JoelFast Hidden in Background',
-      hiddenDesc:
-        'Downloads continue running in JoelFast. Restore it into this panel or relaunch it below.',
-      readyTitle: 'JoelFast Ready to Dock',
-      readyDesc: 'Click below to launch and dock JoelFast inside Joel Desk Pro.',
-      restoreBtn: 'Show JoelFast Interface',
-      launchAndDockBtn: 'Launch & Dock JoelFast',
-      relaunchBtn: 'Relaunch JoelFast',
-      changeExeBtn: 'Change Path',
-      dockedUnderlayHint: 'JoelFast is docked above this area.',
-      resyncBtn: 'Re-align Window',
-      detachBtn: 'Pop Out Standalone',
-      statusDocked: 'JoelFast Docked',
-      statusDetached: 'Standalone',
-      statusHidden: 'Background',
-    },
-    convert: {
-      presets: {
-        auto: 'Auto Detect',
-        pdfDocx: 'PDF → Word',
-        docxPdf: 'Word → PDF',
-        pdfPng: 'PDF → Image',
-        mdPdf: 'Markdown → PDF',
-      },
-      dropTitle: 'Drop documents, audio, or video files to match target formats',
-      dropHint: 'Supports PDF / Word / Markdown as well as MP4 / MKV / MOV / MP3 / WAV / FLAC',
-      queueTitle: 'Conversion Queue',
-      itemCount: (n) => `${n} ${n === 1 ? 'item' : 'items'}`,
-      startAllReady: (n) => `Convert All (${n})`,
-      emptyQueue: 'No files in queue. Drop documents or media above to begin.',
-      selectFormatAria: 'Select target format',
-      convertBtn: 'Convert',
-      converting: 'Converting',
-      exportExt: (ext) => `Export .${ext}`,
-      removeFile: 'Remove file',
-      outputHeader: (source, target) =>
-        `Joel Desk Pro Format Conversion Output\nSource: ${source}\nTarget: ${target}\n`,
-    },
-    settings: {
-      llmTitle: 'Home AI Model Configuration',
-      llmDesc:
-        'Configure the AI engine used by the AI Agent home workspace. Changes are persisted and synced immediately.',
-      modeMock: 'Built-in Local Router',
-      modeCustom: 'Custom LLM Endpoint',
-      localRouterNoticeTitle: 'Zero-config Instant Routing',
-      localRouterNoticeDesc:
-        'Automatically cleans URLs for JoelFast, prepares Cloud Whisper Studio uploads, and suggests document conversion targets offline.',
-      quickPresetsLabel: 'Quick Endpoint Presets',
-      baseUrl: 'Base URL (OpenAI-compatible)',
-      modelId: 'Model ID',
-      apiKeyLabel: 'API Key (Optional for local Ollama / LM Studio)',
-      apiKeyPlaceholder: 'sk-...',
-      showKey: 'Show API Key',
-      hideKey: 'Hide API Key',
-      systemPromptLabel: 'Custom System Prompt (Optional)',
-      systemPromptPlaceholder:
-        'Optional instructions for the Home AI Assistant behavior, tone, or language...',
-      testing: 'Testing…',
-      testedOk: (latencyMs, detail) => `Connected (${latencyMs}ms · ${detail})`,
-      testFailed: (detail) => `Connection failed: ${detail}`,
-      validateEndpoint: 'Test Connection',
-      saveConfig: 'Save & Sync to Home',
-      channelTitle: 'AI Model Channel',
-      channelDesc:
-        'Connect directly to local Magpie to list & switch all your configured models with one click, or switch to a custom OpenAI API.',
-      modeMagpie: 'Magpie Local Channel',
-      magpieBadgeOnline: (count) => `Connected · ${count} models`,
-      magpieBadgeOffline: 'Offline',
-      magpieBaseUrlLabel: 'Magpie Address',
-      magpieTokenLabel: 'Access Token',
-      magpieModelLabel: 'Default Model',
-      magpieRefreshModels: 'Refresh Models',
-      magpieTestAndRefresh: 'Test & Refresh',
-      magpieNoModelsHint: 'No models loaded yet — make sure Magpie is running and click Refresh.',
-      saveMagpieConfig: 'Save Settings',
-      cookiesTitle: 'Site Cookies (Douyin / Bilibili / YouTube / Xiaohongshu)',
-      cookiesDesc:
-        'Chrome 127+ encrypts on-disk cookies (App-Bound Encryption), so TDM cannot read Chrome profiles directly. Log in once inside the built-in browser (or import a Netscape cookies.txt) and Joel Desk Pro will attach cookies automatically when sending links to JoelFast — or export cookies.txt anytime.',
-      cookiesCount: (n) => `${n} saved`,
-      cookiesNotLoggedIn: 'Not logged in',
-      cookiesLoginBtn: 'Built-in Login',
-      cookiesLoggingIn: 'Waiting for window…',
-      cookiesExportTxtBtn: 'Export .txt',
-      cookiesExportAllBtn: 'Export All .txt',
-      cookiesImportTxtBtn: 'Import cookies.txt',
-      cookiesClearBtn: 'Clear',
-      cookiesImportedMsg: (n) => `Imported ${n} cookies into Joel Desk Pro.`,
-      cookiesExportedMsg: (p, n) => `Exported ${n} cookies to ${p}`,
-      cookiesClearedMsg: 'Cleared saved site cookies.',
-      cookiesLoginSavedMsg: (label, n) => `${label} updated (${n} cookies saved).`,
+      statusOffline: 'Offline',
+      desktopBridgeUnavailable: 'Desktop bridge unavailable',
     },
     updateModal: {
       title: 'Joel Desk Pro Updates',
       close: 'Close',
-      currentVersion: (v) => `Version v${v}`,
-      localCommit: (sha) => `Local ${sha}`,
       checking: 'Checking…',
-      checkGitHub: 'Check GitHub',
       newVersionFound: (tag) => `Update available (${tag})`,
       upToDate: (tag) => `Up to date (${tag})`,
-      latestCommitPrefix: 'Latest commit: ',
       viewCommits: 'View Commit',
       downloadZip: 'Source ZIP',
-      privateRepoNotice:
-        'Private repo tip: Local Git pull below works directly with your PC’s Git login even while private. Remote version checking in the browser requires temporarily setting the repo to Public.',
-      clickCheckHint: (repo) =>
-        `Click "Check GitHub" to query ${repo} (when public), or pull directly via Local Git below.`,
-      pullTitle: 'Pull Latest Code to Local Client',
-      pullOnlineDesc:
-        'Local engine online: click below to run git pull + npm install + npm run build (works with private repos via local Git auth).',
-      pullOfflineDesc:
-        'Run a one-click update script on your computer (uses your local Git login — works even when the repo is private).',
-      modeLocalOnline: 'Desktop Client Online',
-      modeWeb: 'Client Offline',
       pullingLocal: 'Pulling & building…',
-      pullNowBtn: 'Pull Update via Local Git',
-      winScriptPrimary: 'Windows Update Script (.bat)',
       winScriptSecondary: 'Windows (.bat)',
       unixScript: 'macOS / Linux (.sh)',
       copyPullCmd: 'Copy git pull Command',
@@ -546,264 +154,65 @@ export const TRANSLATIONS: Record<AppLanguage, Translations> = {
     },
   },
   zh: {
-    documentTitle: 'Joel Desk Pro — 极简桌面端 AI 助手与效率工具箱',
-    views: {
-      agent: 'AI 助手',
-      transcribe: '语音转录',
-      download: '高速下载',
-      convert: '格式转换',
-      settings: 'AI 模型设置',
-    },
-    sidebar: {
-      closeSidebar: '关闭侧边栏',
-      openSidebar: '打开侧边栏',
-      primaryNav: '主功能导航',
-      smartDispatch: '智能调度',
-      manualWorkbenches: '手动工作台',
-      activeTasks: '当前任务',
-      checkUpdates: '检查更新',
-      newVersion: '新版本',
-    },
-    topbar: {
-      newChat: '新建对话',
-      clearCompleted: '清理已完成',
+    documentTitle: 'Joel Desk Pro — 云端语音转录工作台',
+    header: {
+      appTitle: 'Joel Desk Pro',
+      updateBtn: '检查更新',
+      updateAvailable: '有新版本',
     },
     toasts: {
       copied: (label) => `已复制${label}`,
-      newChatStarted: '已开启新对话',
-      clearedConversions: '已清理已完成的转换记录',
-      videoAudioQueued: '已送入 Cloud Whisper Studio（将自动抽离音轨并转录）',
-      cloudTranscribeQueued: '已送入 Cloud Whisper Studio 转录队列',
-      whisperDirSelected: (name) => `已选定 Cloud Whisper Studio 目录：${name}`,
-      whisperRestarted: '已重启 Cloud Whisper Studio 后端服务',
-      whisperOpenedStandalone: '已在独立窗口打开 Cloud Whisper Studio',
-      whisperBackendFailed: '无法启动或连接 Cloud Whisper Studio 后端服务',
-      whisperDropFilePrompt: '请将音视频直接拖入下方的 Cloud Whisper Studio 上传区',
-      tdmDispatched: '已将链接发送给 JoelFast',
-      tdmDispatchFailed: '无法连接 JoelFast 接收端口，请确认已启动',
-      tdmMissingExe: '请先在「高速下载」中选择本机 JoelFast 程序路径',
-      tdmExeSelected: (name) => `已选定 JoelFast 程序：${name}`,
-      tdmDownloaded: (name) => `已从 GitHub 下载 JoelFast：${name}`,
-      tdmDownloadFailed: '无法从 GitHub 下载 JoelFast 安装包',
-      tdmDetached: '已将 JoelFast 弹出为独立窗口',
-      tdmReattached: '已将 JoelFast 重新贴合回工具箱',
-      tdmActivatedFromExt: '检测到 JoelFast 唤起，已自动切换到下载页',
-      foundGitHubCommit: (sha) => `发现 GitHub 新提交 (${sha})`,
-      alreadyLatest: '当前已是 GitHub 最新版本',
-      checkUpdateFailed: '检查更新失败',
-      localUpdated: '本地客户端已更新至 GitHub 最新版本',
-      convertingTo: (fmt) => `正在转换为 ${fmt}`,
-      batchConvertStarted: '已开始批量格式转换',
-      configSaved: 'AI 模型配置已保存并同步到主页',
-      cleanUrlLabel: '纯链接',
-      terminalCmdLabel: '终端更新命令',
-      mdPlainLabel: '无时间轴 Markdown',
-      srtLabel: 'SRT 字幕',
-      magpieSaved: 'Magpie 通道配置已保存',
-      magpieRefreshed: (count) => `已同步 ${count} 个 Magpie 可用模型`,
-      magpieOffline: '未连接到本地 Magpie，请确认 Magpie 已启动',
-      magpieStopped: '已停止当前生成',
-    },
-    agent: {
-      dropTitle: '松开文件，交给 AI 自动识别',
-      dropSubtitle: '支持音视频转录（送入 Cloud Whisper Studio）及 PDF / Word 文档转换',
-      welcomeTitle: '丢入链接、文件，直接说你想做什么',
-      welcomeSubtitle:
-        'AI 助手会自动清洗链接发给 JoelFast、把音视频直接送入 Cloud Whisper Studio 转录；也可在左侧直达工作台。',
-      extractedLink: '已精准提取链接',
-      detectedLink: '已识别链接',
-      copyUrl: '复制纯链',
-      videoAutoExtract: '视频·自动抽音轨',
-      audioTag: '音频',
-      docTag: '文档',
-      removeFile: (name) => `移除 ${name}`,
-      addFiles: '添加文件',
-      addFilesTitle: '添加音视频或文档',
-      placeholder: '粘贴带杂字的链接、拖入 PDF/音视频，或直接输入指令…',
-      sendCommand: '发送指令',
-      downloadDispatch: '高速下载调度',
-      addedToDownload: '已发送 · 打开 JoelFast',
-      sendToDownload: '发送到 JoelFast 下载',
-      cloudTranscribe: 'Cloud Whisper Studio 转录',
-      videoSourceHint: '视频源 · 将自动提取音轨',
-      audioSourceHint: '音频源',
-      mdPlainLabel: 'MD 无时间轴',
-      transcribeStarted: '已送入 · 打开转录台',
-      startCloudTranscribe: '送入 Whisper Studio 转录',
-      docConvert: '文档格式转换',
-      convertStarted: '已开始转换 · 查看',
-      startConvert: '开始转换',
-      activeLocalRouter: '内置本地智能路由',
-      activeCustomModel: (model) => `当前模型：${model}`,
-      thinkingCustomLlm: (model) => `正在请求 ${model}…`,
-      magpieConnected: 'Magpie 已连接',
-      magpieDisconnected: 'Magpie 未连接',
-      customApiLabel: '自定义 API',
-      refreshModels: '刷新模型列表',
-      stopRun: '停止',
-      thinkingTitle: '思考过程',
-      streamingLabel: '生成中…',
-      settingsLink: '模型通道设置',
+      terminalCmdLabel: '拉取命令',
+      whisperDirSaved: (name) => `已选择 Whisper 目录：${name}`,
+      whisperStarted: 'Cloud Whisper Studio 已启动',
+      whisperRestarted: 'Cloud Whisper Studio 已重启',
+      whisperStartFailed: (detail) =>
+        detail ? `Cloud Whisper Studio 启动失败：${detail}` : 'Cloud Whisper Studio 启动失败',
+      whisperStandaloneOpened: '已在浏览器打开独立版 Cloud Whisper Studio',
+      updateFound: (tag) => `发现新版本 (${tag})`,
+      upToDate: '当前已是最新版本',
+      updateCheckFailed: (detail) => `检查更新失败：${detail}`,
+      updatePullSuccess: (msg) => msg,
+      updatePullFailed: (msg) => msg,
+      reloading: '正在刷新客户端…',
     },
     transcribe: {
-      webOnlyTitle: '未检测到 Cloud Whisper Studio 本地服务',
+      webOnlyTitle: '未检测到本地 Cloud Whisper Studio 服务',
       webOnlyDesc: (url) =>
-        `请在本机运行 Cloud Whisper Studio（${url}），或启动 Windows 桌面版 Joel Desk Pro (.exe) 以自动拉起并无缝内嵌完整界面。`,
-      retryProbeBtn: '重新检测连接',
-      missingDirTitle: '定位 Cloud Whisper Studio 项目目录',
+        `请先启动本地 Cloud Whisper Studio（默认端口 ${url}）或使用桌面版 Joel Desk Pro，再点击重试连接。`,
+      retryProbeBtn: '重试连接',
+      missingDirTitle: '请选择 Cloud Whisper Studio 项目目录',
       missingDirDesc:
-        '选择一次电脑上的 cloud-whisper-studio 工程文件夹后，点击「语音转录」会自动无黑框启动并在当前区域无缝运行 Colab / Kaggle 云端听写。',
-      pickDirBtn: '浏览选择项目目录',
-      openSettingsBtn: '前往设置',
+        '选择你本机的 cloud-whisper-studio 文件夹后，Joel Desk Pro 将自动托管启动并内嵌完整转录工作台。',
+      pickDirBtn: '选择项目文件夹',
       startingTitle: '正在启动 Cloud Whisper Studio…',
-      startingDesc: '正在后台拉起 FastAPI 听写服务与 ffmpeg 音频瘦身管道，马上就绪。',
-      readyTitle: 'Cloud Whisper Studio 未运行',
-      readyDesc: '点击下方按钮立即启动并内嵌到当前语音转录工作区。',
-      startBtn: '启动 Whisper Studio',
+      startingDesc:
+        '正在拉起本地转录后端（127.0.0.1:8788）并准备 Colab / Kaggle T4 调度界面。',
+      readyTitle: 'Cloud Whisper Studio 尚未运行',
+      readyDesc:
+        '点击下方按钮即可自动启动本地服务，并在软件内直接上传音视频、连接 Colab / Kaggle T4 免费 GPU 出稿。',
+      startBtn: '启动并加载工作台',
       retryStartBtn: '重试启动',
       restartBtn: '重启服务',
       changeDirBtn: '更换目录',
-      openStandaloneBtn: '独立窗口打开',
+      openStandaloneBtn: '浏览器独立打开',
       reloadUiBtn: '刷新界面',
       restartServiceBtn: '重启服务',
-      statusGpuOnline: (gpu) => `绿灯就绪 · ${gpu}`,
+      statusGpuOnline: (gpu) => `GPU 在线 · ${gpu}`,
       statusServiceOnline: '服务在线',
       statusStarting: '启动中…',
       statusOffline: '未启动',
-      desktopBridgeUnavailable: '仅桌面版客户端支持调用系统原生保存弹窗',
-    },
-    download: {
-      webOnlyTitle: '仅 Windows 桌面客户端可用',
-      webOnlyDesc:
-        '原生 JoelFast 窗口贴合仅在 Windows 版 Joel Desk Pro (.exe) 中运行。请启动桌面端以在此区域直接内嵌操作 JoelFast。',
-      missingExeTitle: '选择本机 JoelFast 程序 (.exe)',
-      missingExeDesc:
-        '选择一次电脑上的 JoelFast 主程序路径后，点击「高速下载」会自动启动并贴合进此区域；你的浏览器插件继续按原方式工作。',
-      downloadTdmBtn: '从 GitHub 下载 JoelFast',
-      downloadTdmStatus: '正在从 GitHub 下载 JoelFast…',
-      downloadTdmFailed: '下载 JoelFast 失败，请稍后重试。',
-      pickExeBtn: '选择 JoelFast (.exe)',
-      openSettingsBtn: '前往设置',
-      startingTitle: '正在启动并贴合 JoelFast…',
-      startingDesc: '正在等待原生 JoelFast 窗口就绪并对齐到工作台区域。',
-      detachedTitle: 'JoelFast 已弹出为独立窗口',
-      detachedDesc: '当前 JoelFast 正在独立窗口中运行，所有下载任务正常进行中。',
-      reattachBtn: '重新贴合回工具箱',
-      hiddenTitle: 'JoelFast 已收起到后台',
-      hiddenDesc: '下载仍在后台运行，你可以一键唤回此区域或重新启动 JoelFast。',
-      readyTitle: 'JoelFast 已就绪',
-      readyDesc: '点击下方按钮将本机 JoelFast 贴合进当前下载界面。',
-      restoreBtn: '唤出 JoelFast 界面',
-      launchAndDockBtn: '启动并贴合 JoelFast',
-      relaunchBtn: '重启 / 唤回 JoelFast',
-      changeExeBtn: '更换程序路径',
-      dockedUnderlayHint: 'JoelFast 已贴合运行于上方区域。',
-      resyncBtn: '重新对齐窗口',
-      detachBtn: '独立弹出',
-      statusDocked: 'JoelFast 已贴合',
-      statusDetached: '独立窗口',
-      statusHidden: '后台运行',
-    },
-    convert: {
-      presets: {
-        auto: '自动识别',
-        pdfDocx: 'PDF → Word',
-        docxPdf: 'Word → PDF',
-        pdfPng: 'PDF → 图片',
-        mdPdf: 'Markdown → PDF',
-      },
-      dropTitle: '拖入文档或音视频文件，自动匹配可转换的目标格式',
-      dropHint: '支持 PDF / Word / Markdown 以及 MP4 / MKV / MOV / MP3 / WAV / FLAC 批量互转',
-      queueTitle: '转换队列',
-      itemCount: (n) => `${n} 项`,
-      startAllReady: (n) => `全部开始转换 (${n})`,
-      emptyQueue: '暂无待转换文件，拖入文件即可开始',
-      selectFormatAria: '选择目标格式',
-      convertBtn: '转换',
-      converting: '转换中',
-      exportExt: (ext) => `导出 .${ext}`,
-      removeFile: '移除文件',
-      outputHeader: (source, target) =>
-        `Joel Desk Pro 格式转换输出\n源文件: ${source}\n目标格式: ${target}\n`,
-    },
-    settings: {
-      llmTitle: '主页 AI 模型配置',
-      llmDesc:
-        '专门用于设置「AI 助手」主页所使用的推理引擎与大模型 API，保存后将持久生效并实时同步至主页。',
-      modeMock: '内置本地路由',
-      modeCustom: '自定义大模型接口',
-      localRouterNoticeTitle: '零配置极速智能调度',
-      localRouterNoticeDesc:
-        '无需外部密钥即可离线运行：自动清洗链接派发给 JoelFast、把音视频直传 Cloud Whisper Studio，并智能匹配文档转换目标格式。',
-      quickPresetsLabel: '常用接口预设（点击快速填充）',
-      baseUrl: 'Base URL（OpenAI 兼容格式）',
-      modelId: '模型名称 (Model ID)',
-      apiKeyLabel: 'API Key（Ollama / LM Studio 本地部署可留空）',
-      apiKeyPlaceholder: 'sk-...',
-      showKey: '显示密钥',
-      hideKey: '隐藏密钥',
-      systemPromptLabel: '自定义系统提示词 System Prompt（选填）',
-      systemPromptPlaceholder: '可选：限定主页 AI 助手的人设、回复风格或常用规则…',
-      testing: '连接测试中…',
-      testedOk: (latencyMs, detail) => `连接成功 (${latencyMs}ms · ${detail})`,
-      testFailed: (detail) => `连接失败：${detail}`,
-      validateEndpoint: '测试连接',
-      saveConfig: '保存并同步到主页',
-      channelTitle: 'AI 模型通道设置',
-      channelDesc:
-        '一键直连本机 Magpie 网关，自动拉取可用模型列表并在对话页随时切换；也可改用自定义 OpenAI 兼容接口。',
-      modeMagpie: 'Magpie 本地通道（推荐）',
-      magpieBadgeOnline: (count) => `已连接 · ${count} 个模型`,
-      magpieBadgeOffline: '未连接',
-      magpieBaseUrlLabel: 'Magpie 地址',
-      magpieTokenLabel: '访问口令 (Token)',
-      magpieModelLabel: '默认使用模型',
-      magpieRefreshModels: '刷新模型',
-      magpieTestAndRefresh: '测试连接并刷新',
-      magpieNoModelsHint: '暂未拉取到模型列表，请先确认 Magpie 已在本机启动后点击刷新。',
-      saveMagpieConfig: '保存设置',
-      cookiesTitle: '网站 Cookies（抖音 / B站 / YouTube / 小红书）',
-      cookiesDesc:
-        '新版 Chrome 开启了应用绑定加密（ABE），TDM 无法直接读取 Chrome 各 Profile 的本地 Cookies。在下方点一次「内置登录」（或手动导入 Netscape 格式 cookies.txt），之后通过 AI 助手或本软件发送链接给 JoelFast 时都会自动附带 Cookies 和 Referer；也可随时导出 cookies.txt 手动导入 TDM。',
-      cookiesCount: (n) => `已保存 ${n} 条`,
-      cookiesNotLoggedIn: '未登录',
-      cookiesLoginBtn: '内置登录',
-      cookiesLoggingIn: '登录窗口已打开…',
-      cookiesExportTxtBtn: '导出 .txt',
-      cookiesExportAllBtn: '导出全部 .txt',
-      cookiesImportTxtBtn: '导入 cookies.txt',
-      cookiesClearBtn: '清空',
-      cookiesImportedMsg: (n) => `已导入 ${n} 条 Cookies，后续发往 JoelFast 将自动附带。`,
-      cookiesExportedMsg: (p, n) => `已导出 ${n} 条 Cookies 至 ${p}`,
-      cookiesClearedMsg: '已清空已保存的网站 Cookies。',
-      cookiesLoginSavedMsg: (label, n) => `${label} Cookies 已更新（共 ${n} 条）。`,
+      desktopBridgeUnavailable: '桌面端桥接不可用',
     },
     updateModal: {
       title: 'Joel Desk Pro 版本更新',
       close: '关闭窗口',
-      currentVersion: (v) => `当前版本 v${v}`,
-      localCommit: (sha) => `本地 ${sha}`,
       checking: '检查中…',
-      checkGitHub: '检查 GitHub 更新',
       newVersionFound: (tag) => `发现 GitHub 新版本 (${tag})`,
       upToDate: (tag) => `已是最新版本 (${tag})`,
-      latestCommitPrefix: '最新提交：',
       viewCommits: '查看提交记录',
       downloadZip: '下载最新源码 (.zip)',
-      privateRepoNotice:
-        '私有仓库说明：下方本机 Git 一键拉取直接复用你电脑已登录的 Git 凭据，仓库保持私有也能拉取；只有上方网页在线查提交时才需临时公开仓库。',
-      clickCheckHint: (repo) =>
-        `仓库公开时可点击右上角「检查 GitHub 更新」读取 ${repo}；私有仓库请直接用下方本机 Git 拉取。`,
-      pullTitle: '客户端直接拉取最新代码',
-      pullOnlineDesc:
-        '本地引擎在线：点击下方按钮自动执行 git pull + npm run build（私有仓库只要本机 Git 已登录即可直拉）。',
-      pullOfflineDesc:
-        '下载一键更新脚本或复制命令到终端运行，直接走本机 Git 凭据拉取（私有仓库可用）。',
-      modeLocalOnline: '桌面客户端在线',
-      modeWeb: '客户端离线',
       pullingLocal: '正在从 GitHub 拉取并构建…',
-      pullNowBtn: '一键拉取 GitHub 更新',
-      winScriptPrimary: 'Windows 一键更新脚本 (.bat)',
       winScriptSecondary: 'Windows 脚本 (.bat)',
       unixScript: 'macOS / Linux (.sh)',
       copyPullCmd: '复制拉取命令',

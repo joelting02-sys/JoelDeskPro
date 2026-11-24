@@ -20,9 +20,6 @@ extraResources:
       - '**/*'
       - '!**/__pycache__/**'
       - '!tests/**'
-asarUnpack:
-  - electron/tdm-host.cs
-  - electron/tdm-host.ps1
 win:
   target:
     - target: nsis

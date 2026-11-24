@@ -1,136 +1,47 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, ExternalLink, Menu, Plus, RefreshCw, Trash2 } from 'lucide-react';
-import { Sidebar } from './components/Sidebar';
-import { AgentView } from './components/AgentView';
+import { Check, ExternalLink, GitBranch, RefreshCw } from 'lucide-react';
+import { BrandLogo } from './components/BrandLogo';
 import { TranscribeView } from './components/TranscribeView';
-import { DownloadView } from './components/DownloadView';
-import { ConvertView } from './components/ConvertView';
-import { SettingsView } from './components/SettingsView';
 import { UpdateModal } from './components/UpdateModal';
-import {
-  AgentActionPayload,
-  AgentMessage,
-  AttachedFileItem,
-  ComputeProvider,
-  ConversionTask,
-  DocumentFormat,
-  EndpointConfig,
-  MagpieSettings,
-  MagpieStatus,
-  ToastNotice,
-  TranscriptLanguage,
-  WhisperPresetId,
-  WorkspaceView,
-} from './types/toolkit';
-import {
-  INITIAL_MAGPIE_STATUS,
-  isDesktopMagpieSupported,
-} from './services/magpieBridge';
-import {
-  DEFAULT_ENDPOINT_CONFIG,
-  callCustomLlmEndpoint,
-  detectDocumentFormat,
-  extractCleanUrl,
-  formatBytes,
-  getRecommendedTargetFormat,
-  loadSavedLlmConfig,
-  nowTimeLabel,
-  parseAgentIntent,
-  parseDeskProToolCall,
-  saveLlmConfigToStorage,
-  stripDeskProToolTags,
-} from './services/toolkitAdapter';
-import {
-  INITIAL_TDM_STATUS,
-  TdmBounds,
-  TdmStatus,
-  isDesktopTdmSupported,
-  probeLocalEngine,
-} from './services/tdmBridge';
 import {
   INITIAL_WHISPER_STATUS,
   WhisperStatus,
-  dispatchFileToWhisper,
   isDesktopWhisperSupported,
 } from './services/whisperBridge';
 import {
+  APP_VERSION,
+  DEFAULT_GITHUB_BRANCH,
+  DEFAULT_GITHUB_REPO,
   GitHubUpdateInfo,
   LocalUpdateResult,
   checkGitHubUpdate,
+  probeLocalEngine,
   setSyncedCommitSha,
   triggerLocalClientUpdate,
 } from './services/githubUpdater';
 import { AppLanguage, TRANSLATIONS, getInitialLanguage, saveLanguage } from './i18n';
 
-const VALID_DOCUMENT_FORMATS = new Set<DocumentFormat>([
-  'pdf',
-  'docx',
-  'md',
-  'png',
-  'txt',
-  'mp4',
-  'mkv',
-  'mov',
-  'webm',
-  'gif',
-  'mp3',
-  'wav',
-  'm4a',
-  'flac',
-  'ogg',
-]);
-
-function normalizeHttpUrl(rawUrl: string): string | null {
-  const cleaned = extractCleanUrl(rawUrl).cleanUrl || rawUrl.trim();
-  if (!cleaned) return null;
-  const candidate = /^https?:\/\//i.test(cleaned)
-    ? cleaned
-    : /^[a-z0-9.-]+\.[a-z]{2,}\//i.test(cleaned)
-      ? `https://${cleaned}`
-      : '';
-  if (!candidate) return null;
-  try {
-    const parsed = new URL(candidate);
-    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-      return parsed.toString();
-    }
-  } catch {}
-  return null;
+interface ToastNotice {
+  id: string;
+  message: string;
+  tone?: 'neutral' | 'success' | 'warning';
 }
 
-export default function App() {
-  const [lang, setLang] = useState<AppLanguage>(() => getInitialLanguage());
-  const [activeView, setActiveView] = useState<WorkspaceView>('agent');
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+const LOCAL_ENGINE_PORT = 17890;
+const LOCAL_ENGINE_TOKEN = 'joeldeskpro-local-bridge';
 
-  const [config, setConfig] = useState<EndpointConfig>(() => ({
-    ...DEFAULT_ENDPOINT_CONFIG,
-    ...loadSavedLlmConfig(),
-  }));
-  const [messages, setMessages] = useState<AgentMessage[]>([]);
-  const [agentSending, setAgentSending] = useState(false);
-  const [conversions, setConversions] = useState<ConversionTask[]>([]);
-  const [localEngineOnline, setLocalEngineOnline] = useState(false);
-  const [localEnginePackaged, setLocalEnginePackaged] = useState(false);
-  const [tdmStatus, setTdmStatus] = useState<TdmStatus>(() => ({
-    ...INITIAL_TDM_STATUS,
-    supported: isDesktopTdmSupported(),
-  }));
-  const [tdmHiddenByUser, setTdmHiddenByUser] = useState(false);
-  const [tdmDownloading, setTdmDownloading] = useState(false);
-  const [tdmDownloadError, setTdmDownloadError] = useState('');
+export function App() {
+  const [lang, setLang] = useState<AppLanguage>(() => getInitialLanguage());
+  const t = TRANSLATIONS[lang];
 
   const [whisperStatus, setWhisperStatus] = useState<WhisperStatus>(() => ({
     ...INITIAL_WHISPER_STATUS,
     supported: isDesktopWhisperSupported(),
   }));
-  const [whisperVisited, setWhisperVisited] = useState(false);
   const [whisperReloadNonce, setWhisperReloadNonce] = useState(0);
-  const [magpieStatus, setMagpieStatus] = useState<MagpieStatus>(() => ({
-    ...INITIAL_MAGPIE_STATUS,
-    supported: isDesktopMagpieSupported(),
-  }));
 
+  const [localEngineOnline, setLocalEngineOnline] = useState(false);
+  const [localEnginePackaged, setLocalEnginePackaged] = useState(false);
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<GitHubUpdateInfo | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -139,158 +50,37 @@ export default function App() {
   const [localUpdateResult, setLocalUpdateResult] = useState<LocalUpdateResult | null>(null);
   const [toast, setToast] = useState<ToastNotice | null>(null);
 
-  const langRef = useRef<AppLanguage>(lang);
-  langRef.current = lang;
-  const activeViewRef = useRef<WorkspaceView>(activeView);
-  activeViewRef.current = activeView;
-  const lastDownloadBoundsRef = useRef<TdmBounds | undefined>(undefined);
   const whisperIframeRef = useRef<HTMLIFrameElement>(null);
-  const diskLlmSyncedRef = useRef(false);
-  const activeRunRef = useRef<{
-    runId: string;
-    messageId: string;
-    rawText: string;
-    attachments: AttachedFileItem[];
-    accumulatedText: string;
-    fallbackWhisperDefaults?: {
-      provider: ComputeProvider;
-      preset: WhisperPresetId;
-      language: TranscriptLanguage;
-    };
-  } | null>(null);
-  const handleDispatchAgentActionRef = useRef<
-    (messageId: string, action: AgentActionPayload) => Promise<void>
-  >(async () => {});
-
-  const t = TRANSLATIONS[lang];
-
-  const handleChangeLanguage = useCallback((nextLang: AppLanguage) => {
-    setLang(nextLang);
-    saveLanguage(nextLang);
-  }, []);
 
   useEffect(() => {
-    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
-    document.title = TRANSLATIONS[lang].documentTitle;
-  }, [lang]);
-
-  useEffect(() => {
-    if (activeView === 'transcribe') {
-      setWhisperVisited(true);
-    }
-  }, [activeView]);
+    document.title = t.documentTitle;
+  }, [t.documentTitle]);
 
   const showToast = useCallback((message: string, tone: ToastNotice['tone'] = 'neutral') => {
-    const id = `${Date.now()}`;
+    const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     setToast({ id, message, tone });
     window.setTimeout(() => {
-      setToast((curr) => (curr?.id === id ? null : curr));
-    }, 2600);
+      setToast((prev) => (prev?.id === id ? null : prev));
+    }, 3200);
   }, []);
 
-  const handleCopyText = useCallback(
-    (text: string, label: string) => {
-      if (navigator.clipboard?.writeText) {
-        navigator.clipboard.writeText(text).catch(() => undefined);
-      }
-      showToast(TRANSLATIONS[langRef.current].toasts.copied(label), 'success');
-    },
-    [showToast]
-  );
-
-  // Sync native JoelFast host status & live events
-  useEffect(() => {
-    const tdmApi = window.joelDesktop?.tdm;
-    if (!tdmApi || !isDesktopTdmSupported()) return;
-
-    let mounted = true;
-    tdmApi.getStatus().then((st) => {
-      if (!mounted || !st) return;
-      setTdmStatus(st);
-      if (st.settings) {
-        setConfig((prev) => ({
-          ...prev,
-          tdmExePath: st.settings!.tdm_exe_path ?? prev.tdmExePath,
-          tdmAutoLaunch: st.settings!.tdm_auto_launch ?? prev.tdmAutoLaunch,
-          tdmCloseOnExit: st.settings!.tdm_close_on_exit ?? prev.tdmCloseOnExit,
-          tdmHideOnDrag: st.settings!.tdm_hide_on_drag ?? prev.tdmHideOnDrag,
-          tdmCapturePort: st.settings!.tdm_capture_port ?? prev.tdmCapturePort,
-        }));
-      }
-    });
-
-    const off = tdmApi.onEvent((evt) => {
-      if (!mounted || !evt) return;
-      if (evt.status) setTdmStatus(evt.status);
-      if (evt.event === 'tdm-hidden-by-user') {
-        setTdmHiddenByUser(true);
-      } else if (evt.event === 'tdm-exited') {
-        setTdmHiddenByUser(false);
-      } else if (evt.event === 'tdm-activated') {
-        setTdmHiddenByUser(false);
-        if (activeViewRef.current !== 'download') {
-          setActiveView('download');
-          showToast(TRANSLATIONS[langRef.current].toasts.tdmActivatedFromExt, 'success');
-        }
-      }
-    });
-
-    return () => {
-      mounted = false;
-      off();
-    };
-  }, [showToast]);
-
-  // Sync Cloud Whisper Studio backend status & persisted Home AI settings
+  // Subscribe to Cloud Whisper Studio backend status in desktop mode
   useEffect(() => {
     const whisperApi = window.joelDesktop?.whisper;
     if (!whisperApi || !isDesktopWhisperSupported()) return;
 
     let mounted = true;
-    const applyWhisperStatus = (st: WhisperStatus, isInitialLoad = false) => {
-      setWhisperStatus(st);
-      if (st.settings) {
-        const s = st.settings;
-        setConfig((prev) => {
-          const next: EndpointConfig = {
-            ...prev,
-            whisperProjectDir: s.whisper_project_dir ?? prev.whisperProjectDir,
-            whisperPort: s.whisper_port ?? prev.whisperPort,
-            whisperAutoStart: s.whisper_auto_start ?? prev.whisperAutoStart,
-            whisperCloseOnExit: s.whisper_close_on_exit ?? prev.whisperCloseOnExit,
-          };
-          if (isInitialLoad && !diskLlmSyncedRef.current) {
-            diskLlmSyncedRef.current = true;
-            const localSaved = loadSavedLlmConfig();
-            if (s.llm_runtime_mode === 'mock' || s.llm_runtime_mode === 'custom_endpoint') {
-              next.runtimeMode = s.llm_runtime_mode;
-            } else if (localSaved.runtimeMode) {
-              next.runtimeMode = localSaved.runtimeMode;
-            }
-            if (s.llm_base_url) next.llmBaseUrl = s.llm_base_url;
-            if (s.llm_model) next.llmModel = s.llm_model;
-            if (typeof s.llm_api_key === 'string' && s.llm_api_key) {
-              next.llmApiKey = s.llm_api_key;
-              next.llmApiKeyConfigured = Boolean(s.llm_api_key.trim());
-            }
-            if (typeof s.llm_system_prompt === 'string' && s.llm_system_prompt) {
-              next.llmSystemPrompt = s.llm_system_prompt;
-            }
-            saveLlmConfigToStorage(next);
-          }
-          return next;
-        });
-      }
-    };
-
-    whisperApi.getStatus().then((st) => {
-      if (!mounted || !st) return;
-      applyWhisperStatus(st, true);
-    });
+    whisperApi
+      .getStatus()
+      .then((st) => {
+        if (mounted && st) setWhisperStatus(st);
+      })
+      .catch(() => {});
 
     const off = whisperApi.onEvent((evt) => {
-      if (!mounted || !evt) return;
-      if (evt.status) applyWhisperStatus(evt.status, false);
+      if (mounted && evt?.status) {
+        setWhisperStatus(evt.status);
+      }
     });
 
     return () => {
@@ -299,303 +89,71 @@ export default function App() {
     };
   }, []);
 
-  // Sync direct Magpie model channel status & SSE streaming events
-  useEffect(() => {
-    const magpieApi = window.joelDesktop?.magpie;
-    if (!magpieApi || !isDesktopMagpieSupported()) return;
-
-    let mounted = true;
-    magpieApi.getStatus(true).then((st) => {
-      if (!mounted || !st) return;
-      setMagpieStatus(st);
-    });
-
-    const off = magpieApi.onEvent((evt) => {
-      if (!mounted || !evt) return;
-      if (evt.type === 'status' && evt.status) {
-        setMagpieStatus(evt.status);
-        return;
-      }
-
-      const currentRun = activeRunRef.current;
-      if (!currentRun || (evt.runId && evt.runId !== currentRun.runId)) return;
-
-      if (evt.type === 'text-delta' && typeof evt.text === 'string') {
-        currentRun.accumulatedText += evt.text;
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === currentRun.messageId ? { ...m, content: `${m.content}${evt.text}` } : m
-          )
-        );
-        return;
-      }
-
-      if (evt.type === 'thinking-delta' && typeof evt.text === 'string') {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === currentRun.messageId
-              ? { ...m, thinking: `${m.thinking || ''}${evt.text}` }
-              : m
-          )
-        );
-        return;
-      }
-
-      if (evt.type === 'done') {
-        const cleanedContent = stripDeskProToolTags(currentRun.accumulatedText);
-        const toolCall =
-          !evt.aborted && !evt.error ? parseDeskProToolCall(currentRun.accumulatedText) : null;
-
-        let resolvedAction: AgentActionPayload | undefined;
-        let viewToOpen: WorkspaceView | null = null;
-        let dropMediaToast = false;
-
-        if (toolCall?.tool === 'download') {
-          const urlCandidate =
-            typeof toolCall.args.url === 'string' && toolCall.args.url.trim()
-              ? toolCall.args.url.trim()
-              : currentRun.rawText;
-          const cleanUrl = normalizeHttpUrl(urlCandidate) || normalizeHttpUrl(currentRun.rawText);
-          if (cleanUrl) {
-            const urlMeta = extractCleanUrl(cleanUrl);
-            const rawFileName =
-              typeof toolCall.args.filename === 'string' ? toolCall.args.filename.trim() : '';
-            resolvedAction = {
-              type: 'download',
-              rawInput: currentRun.rawText,
-              cleanUrl,
-              fileName: rawFileName || urlMeta.fileName,
-            };
-          }
-        } else if (toolCall?.tool === 'transcribe') {
-          const mediaAttachment = currentRun.attachments.find(
-            (f) => f.category === 'video' || f.category === 'audio'
+  const handleCheckGitHubUpdate = useCallback(
+    async (silent = false) => {
+      setCheckingUpdate(true);
+      if (!silent) setUpdateError(null);
+      try {
+        const info = await checkGitHubUpdate(DEFAULT_GITHUB_REPO, DEFAULT_GITHUB_BRANCH, lang);
+        setUpdateInfo(info);
+        setUpdateError(null);
+        if (!silent) {
+          showToast(
+            info.hasUpdate ? t.toasts.updateFound(info.releaseTag || info.shortSha) : t.toasts.upToDate,
+            info.hasUpdate ? 'neutral' : 'success'
           );
-          if (mediaAttachment) {
-            const presetArg =
-              toolCall.args.preset === 'fast' ||
-              toolCall.args.preset === 'balanced' ||
-              toolCall.args.preset === 'accurate'
-                ? toolCall.args.preset
-                : currentRun.fallbackWhisperDefaults?.preset || 'balanced';
-            const languageArg =
-              toolCall.args.language === 'auto' ||
-              toolCall.args.language === 'zh' ||
-              toolCall.args.language === 'en'
-                ? toolCall.args.language
-                : currentRun.fallbackWhisperDefaults?.language || 'auto';
-            const isVideo = mediaAttachment.category === 'video';
-            resolvedAction = {
-              type: 'transcribe',
-              fileName: mediaAttachment.name,
-              fileSizeBytes: mediaAttachment.size,
-              mediaKind: isVideo ? 'video' : 'audio',
-              needsAudioExtract: isVideo,
-              provider: currentRun.fallbackWhisperDefaults?.provider || 'colab-t4',
-              preset: presetArg,
-              outputFormat: 'srt',
-              language: languageArg,
-              rawFile: mediaAttachment.rawFile,
-            };
-          } else {
-            viewToOpen = 'transcribe';
-            dropMediaToast = true;
-          }
-        } else if (toolCall?.tool === 'convert') {
-          const docAttachment =
-            currentRun.attachments.find((f) => f.category === 'document') ||
-            currentRun.attachments[0];
-          if (docAttachment) {
-            const sourceFormat = detectDocumentFormat(docAttachment.name);
-            const rawTarget =
-              typeof toolCall.args.target === 'string'
-                ? (toolCall.args.target.trim().toLowerCase() as DocumentFormat)
-                : undefined;
-            const targetFormat =
-              rawTarget && VALID_DOCUMENT_FORMATS.has(rawTarget)
-                ? rawTarget
-                : getRecommendedTargetFormat(sourceFormat);
-            resolvedAction = {
-              type: 'convert',
-              fileName: docAttachment.name,
-              fileSizeBytes: docAttachment.size,
-              sourceFormat,
-              targetFormat,
-            };
-          } else {
-            viewToOpen = 'convert';
-          }
-        } else if (toolCall?.tool === 'open') {
-          const rawView = typeof toolCall.args.view === 'string' ? toolCall.args.view.trim() : '';
-          if (
-            rawView === 'download' ||
-            rawView === 'transcribe' ||
-            rawView === 'convert' ||
-            rawView === 'settings'
-          ) {
-            viewToOpen = rawView;
-          }
         }
-
-        const runMessageId = currentRun.messageId;
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === runMessageId
-              ? {
-                  ...m,
-                  content: currentRun.accumulatedText
-                    ? cleanedContent
-                    : stripDeskProToolTags(m.content),
-                  action: resolvedAction ?? m.action,
-                  isStreaming: false,
-                  error: evt.error || m.error,
-                }
-              : m
-          )
-        );
-        activeRunRef.current = null;
-        setAgentSending(false);
-
-        if (resolvedAction) {
-          void handleDispatchAgentActionRef.current(runMessageId, resolvedAction);
-        } else if (viewToOpen) {
-          setActiveView(viewToOpen);
-          if (dropMediaToast) {
-            showToast(TRANSLATIONS[langRef.current].toasts.whisperDropFilePrompt, 'neutral');
-          }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!silent) {
+          setUpdateError(msg);
+          showToast(t.toasts.updateCheckFailed(msg), 'warning');
         }
-      }
-    });
-
-    return () => {
-      mounted = false;
-      off();
-    };
-  }, []);
-
-  // Ensure TDM hides immediately when navigating away from Downloader or opening overlays
-  useEffect(() => {
-    const tdmApi = window.joelDesktop?.tdm;
-    if (!tdmApi || !isDesktopTdmSupported()) return;
-    if (activeView !== 'download' || updateModalOpen || mobileNavOpen) {
-      tdmApi.setVisible(false).then((res) => {
-        if (res?.status) setTdmStatus(res.status);
-      });
-    }
-  }, [activeView, updateModalOpen, mobileNavOpen]);
-
-  const handlePickTdmExe = useCallback(async () => {
-    const tdmApi = window.joelDesktop?.tdm;
-    if (!tdmApi) return;
-    const res = await tdmApi.pickExe();
-    if (res?.status) setTdmStatus(res.status);
-    if (res?.ok && res.exePath) {
-      setConfig((prev) => ({ ...prev, tdmExePath: res.exePath! }));
-      const base = res.exePath.split(/[\\/]/).pop() || res.exePath;
-      showToast(TRANSLATIONS[langRef.current].toasts.tdmExeSelected(base), 'success');
-    }
-  }, [showToast]);
-
-  const handleDownloadTdm = useCallback(async () => {
-    const tdmApi = window.joelDesktop?.tdm;
-    if (!tdmApi) return;
-    setTdmDownloading(true);
-    setTdmDownloadError('');
-    try {
-      const res = await tdmApi.downloadInstaller();
-      if (res?.status) setTdmStatus(res.status);
-      if (res?.ok && res.path) {
-        const base = res.path.split(/[\\/]/).pop() || res.path;
-        showToast(TRANSLATIONS[langRef.current].toasts.tdmDownloaded(base), 'success');
-      } else if (!res?.ok) {
-        const msg = res?.error || TRANSLATIONS[langRef.current].toasts.tdmDownloadFailed;
-        setTdmDownloadError(msg);
-        showToast(msg, 'warning');
-      }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      setTdmDownloadError(msg);
-      showToast(msg, 'warning');
-    } finally {
-      setTdmDownloading(false);
-    }
-  }, [showToast]);
-
-  const handleAttachTdm = useCallback(
-    async (bounds?: TdmBounds) => {
-      const tdmApi = window.joelDesktop?.tdm;
-      if (!tdmApi) return;
-      if (bounds) lastDownloadBoundsRef.current = bounds;
-      setTdmHiddenByUser(false);
-      setTdmStatus((prev) => ({ ...prev, starting: true, lastError: '' }));
-      const res = await tdmApi.attach(bounds || lastDownloadBoundsRef.current, {
-        autoLaunch: true,
-        visible: true,
-      });
-      if (res?.status) setTdmStatus(res.status);
-      if (res && !res.ok && res.error) {
-        showToast(res.error, 'warning');
+      } finally {
+        setCheckingUpdate(false);
       }
     },
-    [showToast]
+    [lang, showToast, t.toasts]
   );
 
-  const handleUpdateTdmBounds = useCallback((bounds: TdmBounds) => {
-    lastDownloadBoundsRef.current = bounds;
-    window.joelDesktop?.tdm.updateBounds(bounds).catch(() => {});
-  }, []);
-
-  const handleSetTdmVisible = useCallback((visible: boolean, bounds?: TdmBounds) => {
-    if (bounds) lastDownloadBoundsRef.current = bounds;
-    window.joelDesktop?.tdm.setVisible(visible, bounds).then((res) => {
-      if (res?.status) setTdmStatus(res.status);
+  // Probe local updater backend and run silent update check on mount
+  useEffect(() => {
+    let active = true;
+    probeLocalEngine(LOCAL_ENGINE_PORT).then((st) => {
+      if (!active) return;
+      setLocalEngineOnline(st.online);
+      setLocalEnginePackaged(Boolean(st.packaged));
     });
-  }, []);
+    handleCheckGitHubUpdate(true);
+    return () => {
+      active = false;
+    };
+  }, [handleCheckGitHubUpdate]);
 
-  const handleDetachTdm = useCallback(async () => {
-    const tdmApi = window.joelDesktop?.tdm;
-    if (!tdmApi) return;
-    setTdmHiddenByUser(false);
-    const res = await tdmApi.detach();
-    if (res?.status) setTdmStatus(res.status);
-    showToast(TRANSLATIONS[langRef.current].toasts.tdmDetached, 'neutral');
-  }, [showToast]);
-
-  const handleRelaunchTdm = useCallback(async (bounds?: TdmBounds) => {
-    const tdmApi = window.joelDesktop?.tdm;
-    if (!tdmApi) return;
-    if (bounds) lastDownloadBoundsRef.current = bounds;
-    setTdmHiddenByUser(false);
-    setTdmStatus((prev) => ({ ...prev, starting: true, lastError: '' }));
-    const res = await tdmApi.relaunch(bounds || lastDownloadBoundsRef.current);
-    if (res?.status) setTdmStatus(res.status);
-  }, []);
-
-  // Cloud Whisper Studio handlers & instant live iframe snapshot sync
   const handleStartWhisper = useCallback(async () => {
     const whisperApi = window.joelDesktop?.whisper;
     if (!whisperApi) return;
-    setWhisperStatus((prev) => ({ ...prev, starting: true, lastError: '' }));
     const res = await whisperApi.start();
     if (res?.status) setWhisperStatus(res.status);
-    if (res && !res.ok && res.error) {
-      showToast(res.error, 'warning');
+    if (res?.ok) {
+      showToast(t.toasts.whisperStarted, 'success');
+    } else if (!res?.needsDir && res?.error) {
+      showToast(t.toasts.whisperStartFailed(res.error), 'warning');
     }
-  }, [showToast]);
+  }, [showToast, t.toasts]);
 
   const handleRestartWhisper = useCallback(async () => {
     const whisperApi = window.joelDesktop?.whisper;
     if (!whisperApi) return;
-    setWhisperStatus((prev) => ({ ...prev, starting: true, lastError: '' }));
     const res = await whisperApi.restart();
     if (res?.status) setWhisperStatus(res.status);
     if (res?.ok) {
       setWhisperReloadNonce((n) => n + 1);
-      showToast(TRANSLATIONS[langRef.current].toasts.whisperRestarted, 'success');
+      showToast(t.toasts.whisperRestarted, 'success');
     } else if (res?.error) {
-      showToast(res.error, 'warning');
+      showToast(t.toasts.whisperStartFailed(res.error), 'warning');
     }
-  }, [showToast]);
+  }, [showToast, t.toasts]);
 
   const handlePickWhisperDir = useCallback(async () => {
     const whisperApi = window.joelDesktop?.whisper;
@@ -603,600 +161,128 @@ export default function App() {
     const res = await whisperApi.pickDir();
     if (res?.status) setWhisperStatus(res.status);
     if (res?.ok && res.projectDir) {
-      setConfig((prev) => ({ ...prev, whisperProjectDir: res.projectDir! }));
-      const base = res.projectDir.split(/[\\/]/).pop() || res.projectDir;
-      showToast(TRANSLATIONS[langRef.current].toasts.whisperDirSelected(base), 'success');
-    } else if (res && !res.canceled && res.error) {
-      showToast(res.error, 'warning');
+      const folderName = res.projectDir.split(/[\\/]/).filter(Boolean).pop() || res.projectDir;
+      showToast(t.toasts.whisperDirSaved(folderName), 'success');
     }
-  }, [showToast]);
+  }, [showToast, t.toasts]);
 
   const handleOpenWhisperStandalone = useCallback(async () => {
     const whisperApi = window.joelDesktop?.whisper;
     if (!whisperApi) return;
     const res = await whisperApi.openStandalone();
     if (res?.ok) {
-      showToast(TRANSLATIONS[langRef.current].toasts.whisperOpenedStandalone, 'neutral');
+      showToast(t.toasts.whisperStandaloneOpened, 'neutral');
     }
-  }, [showToast]);
+  }, [showToast, t.toasts]);
 
   const handleWhisperSnapshotSync = useCallback(
     (snapshot: { compute?: Record<string, unknown>; settings?: Record<string, unknown> }) => {
+      const compute = snapshot.compute || {};
+      const st = snapshot.settings || {};
       setWhisperStatus((prev) => ({
         ...prev,
-        running: true,
-        computeStatus: String(snapshot.compute?.status || prev.computeStatus || 'offline'),
-        computeProvider: String(snapshot.compute?.provider || prev.computeProvider || 'colab'),
-        computeGpu: String(snapshot.compute?.gpu ?? prev.computeGpu ?? ''),
-        pendingTasks: Number(snapshot.compute?.pending_tasks_count ?? prev.pendingTasks ?? 0),
-        whisperRemoteProvider: snapshot.settings
-          ? String(snapshot.settings.provider || prev.whisperRemoteProvider || 'colab')
-          : prev.whisperRemoteProvider,
-        whisperRemoteModel: snapshot.settings
-          ? String(snapshot.settings.whisper_model || prev.whisperRemoteModel || 'large-v3-turbo')
-          : prev.whisperRemoteModel,
-        whisperRemoteLanguage: snapshot.settings
-          ? String(snapshot.settings.language || prev.whisperRemoteLanguage || 'auto')
-          : prev.whisperRemoteLanguage,
+        computeStatus: typeof compute.status === 'string' ? compute.status : prev.computeStatus,
+        computeProvider:
+          typeof compute.provider === 'string' ? compute.provider : prev.computeProvider,
+        computeGpu: typeof compute.gpu === 'string' ? compute.gpu : prev.computeGpu,
+        whisperRemoteProvider:
+          typeof st.provider === 'string' ? st.provider : prev.whisperRemoteProvider,
+        whisperRemoteModel:
+          typeof st.whisper_model === 'string' ? st.whisper_model : prev.whisperRemoteModel,
+        whisperRemoteLanguage:
+          typeof st.language === 'string' ? st.language : prev.whisperRemoteLanguage,
       }));
     },
     []
   );
 
-  // Live progress loop for active conversions
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setConversions((prev) => {
-        const hasActive = prev.some((c) => c.status === 'converting');
-        if (!hasActive) return prev;
-        return prev.map((task) => {
-          if (task.status !== 'converting') return task;
-          const nextProgress = Math.min(100, task.progress + 18);
-          return {
-            ...task,
-            progress: nextProgress,
-            status: nextProgress >= 100 ? 'completed' : 'converting',
-          };
-        });
-      });
-    }, 650);
-
-    return () => window.clearInterval(timer);
-  }, []);
-
-  // Poll local updater HTTP engine
-  useEffect(() => {
-    let cancelled = false;
-
-    const checkHealth = async () => {
-      const res = await probeLocalEngine(config.chromeBridgePort);
-      if (cancelled) return;
-      setLocalEngineOnline(res.online);
-      setLocalEnginePackaged(Boolean(res.packaged));
-    };
-
-    checkHealth();
-    const timer = window.setInterval(checkHealth, 3000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [config.chromeBridgePort]);
-
-  const handleCheckGitHubUpdate = useCallback(
-    async (silent = false) => {
-      setCheckingUpdate(true);
-      setUpdateError(null);
-      try {
-        const info = await checkGitHubUpdate(
-          config.githubRepo,
-          config.githubBranch,
-          langRef.current
-        );
-        setUpdateInfo(info);
-        if (!silent) {
-          const currToasts = TRANSLATIONS[langRef.current].toasts;
-          showToast(
-            info.hasUpdate
-              ? currToasts.foundGitHubCommit(info.shortSha)
-              : currToasts.alreadyLatest,
-            info.hasUpdate ? 'success' : 'neutral'
-          );
-        }
-      } catch (err) {
-        const msg =
-          err instanceof Error
-            ? err.message
-            : TRANSLATIONS[langRef.current].toasts.checkUpdateFailed;
-        setUpdateError(msg);
-        if (!silent) showToast(msg, 'warning');
-      } finally {
-        setCheckingUpdate(false);
-      }
-    },
-    [config.githubBranch, config.githubRepo, showToast]
-  );
-
-  useEffect(() => {
-    if (!config.autoCheckUpdate) return;
-    handleCheckGitHubUpdate(true);
-  }, [config.autoCheckUpdate, handleCheckGitHubUpdate]);
-
-  const handleOpenUpdateModal = useCallback(() => {
-    setUpdateModalOpen(true);
-    setLocalUpdateResult(null);
-    setUpdateError(null);
-    probeLocalEngine(config.chromeBridgePort).then((res) => {
-      setLocalEngineOnline(res.online);
-      setLocalEnginePackaged(Boolean(res.packaged));
-    });
-    handleCheckGitHubUpdate(true);
-  }, [config.chromeBridgePort, handleCheckGitHubUpdate]);
-
   const handlePullLocalUpdate = useCallback(async () => {
     setUpdatingLocal(true);
     setLocalUpdateResult(null);
     const result = await triggerLocalClientUpdate(
-      config.chromeBridgePort,
-      config.chromeBridgeToken,
-      config.githubRepo,
-      config.githubBranch,
-      langRef.current
+      LOCAL_ENGINE_PORT,
+      LOCAL_ENGINE_TOKEN,
+      DEFAULT_GITHUB_REPO,
+      DEFAULT_GITHUB_BRANCH,
+      lang
     );
     setUpdatingLocal(false);
     setLocalUpdateResult(result);
     if (result.ok) {
-      if (result.updatedSha) {
-        setSyncedCommitSha(result.updatedSha);
-      }
-      setUpdateInfo((prev) =>
-        prev
-          ? {
-              ...prev,
-              hasUpdate: false,
-              syncedSha: result.updatedSha || prev.latestSha,
-            }
-          : prev
-      );
-      showToast(TRANSLATIONS[langRef.current].toasts.localUpdated, 'success');
+      if (result.updatedSha) setSyncedCommitSha(result.updatedSha);
+      showToast(t.toasts.updatePullSuccess(result.message), 'success');
+      handleCheckGitHubUpdate(true);
     } else {
-      showToast(result.message, 'warning');
+      showToast(t.toasts.updatePullFailed(result.message), 'warning');
     }
-  }, [
-    config.chromeBridgePort,
-    config.chromeBridgeToken,
-    config.githubBranch,
-    config.githubRepo,
-    showToast,
-  ]);
+  }, [handleCheckGitHubUpdate, lang, showToast, t.toasts]);
 
   const handleMarkSyncedAndReload = useCallback(() => {
     if (updateInfo?.latestSha) {
       setSyncedCommitSha(updateInfo.latestSha);
     }
-    window.location.reload();
-  }, [updateInfo]);
+    showToast(t.toasts.reloading, 'success');
+    window.setTimeout(() => window.location.reload(), 400);
+  }, [showToast, t.toasts, updateInfo]);
 
-  const createConversionTask = useCallback(
-    (params: {
-      fileName: string;
-      fileSizeBytes: number;
-      sourceFormat: DocumentFormat;
-      targetFormat: DocumentFormat;
-      autoStart?: boolean;
-      source: 'agent' | 'manual';
-    }) => {
-      const task: ConversionTask = {
-        id: `cv-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-        fileName: params.fileName,
-        fileSizeBytes: params.fileSizeBytes,
-        sourceFormat: params.sourceFormat,
-        targetFormat: params.targetFormat,
-        progress: params.autoStart ? 12 : 0,
-        status: params.autoStart ? 'converting' : 'ready',
-        createdAt: nowTimeLabel(),
-        source: params.source,
-      };
-      setConversions((prev) => [task, ...prev]);
-      if (params.autoStart) {
-        showToast(
-          TRANSLATIONS[langRef.current].toasts.convertingTo(params.targetFormat.toUpperCase()),
-          'success'
-        );
+  const handleCopyText = useCallback(
+    async (text: string, label: string) => {
+      try {
+        if (window.joelDesktop?.whisper) {
+          await window.joelDesktop.whisper.copyText(text);
+        } else if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+        }
+        showToast(t.toasts.copied(label), 'success');
+      } catch {
+        // Ignore clipboard errors
       }
-      return task.id;
     },
-    [showToast]
+    [showToast, t.toasts]
   );
 
-  // Direct Magpie channel handlers
-  const handleSelectMagpieModel = useCallback(async (model: string) => {
-    const magpieApi = window.joelDesktop?.magpie;
-    if (!magpieApi) return;
-    const res = await magpieApi.saveSettings({ model });
-    if (res?.status) setMagpieStatus(res.status);
-  }, []);
-
-  const handleRefreshMagpie = useCallback(async (): Promise<MagpieStatus | null> => {
-    const magpieApi = window.joelDesktop?.magpie;
-    if (!magpieApi) return null;
-    const st = await magpieApi.getStatus(true);
-    setMagpieStatus(st);
-    if (st.online) {
-      showToast(TRANSLATIONS[langRef.current].toasts.magpieRefreshed(st.models.length), 'success');
-    } else {
-      showToast(TRANSLATIONS[langRef.current].toasts.magpieOffline, 'warning');
-    }
-    return st;
-  }, [showToast]);
-
-  const handleSaveMagpieSettings = useCallback(
-    async (patch: Partial<MagpieSettings>): Promise<MagpieStatus | null> => {
-      const magpieApi = window.joelDesktop?.magpie;
-      if (!magpieApi) return null;
-      const res = await magpieApi.saveSettings(patch);
-      if (res?.status) setMagpieStatus(res.status);
-      if (res?.ok) {
-        showToast(TRANSLATIONS[langRef.current].toasts.magpieSaved, 'success');
-      }
-      return res?.status || null;
-    },
-    [showToast]
-  );
-
-  const handleStopMagpieRun = useCallback(async () => {
-    const runId = activeRunRef.current?.runId;
-    if (!runId) return;
-    await window.joelDesktop?.magpie?.stop(runId);
-    showToast(TRANSLATIONS[langRef.current].toasts.magpieStopped, 'neutral');
-  }, [showToast]);
-
-  // Agent Handlers
-  const handleSendAgentMessage = (text: string, attachments: AttachedFileItem[]) => {
-    const userMsg: AgentMessage = {
-      id: `msg-u-${Date.now()}`,
-      role: 'user',
-      content: text,
-      attachments,
-      timestamp: nowTimeLabel(),
-    };
-
-    const syncedProvider: ComputeProvider =
-      whisperStatus.whisperRemoteProvider === 'kaggle' ? 'kaggle-t4' : 'colab-t4';
-    const syncedPreset: WhisperPresetId =
-      whisperStatus.whisperRemoteModel === 'small'
-        ? 'fast'
-        : whisperStatus.whisperRemoteModel === 'large-v3'
-          ? 'accurate'
-          : 'balanced';
-    const syncedLanguage: TranscriptLanguage =
-      whisperStatus.whisperRemoteLanguage === 'zh'
-        ? 'zh'
-        : whisperStatus.whisperRemoteLanguage === 'en'
-          ? 'en'
-          : 'auto';
-
-    const parsed = parseAgentIntent(text, attachments, config, lang, {
-      provider: syncedProvider,
-      preset: syncedPreset,
-      language: syncedLanguage,
-    });
-
-    const assistantMsgId = `msg-a-${Date.now() + 1}`;
-    const magpieApi = window.joelDesktop?.magpie;
-    const useMagpieChannel = Boolean(
-      magpieApi && isDesktopMagpieSupported() && magpieStatus.settings.mode === 'magpie'
-    );
-
-    if (useMagpieChannel) {
-      const runId = `magpie-${Date.now()}`;
-      const chosenModel =
-        magpieStatus.settings.model || magpieStatus.models[0]?.id || '';
-
-      let effectivePrompt = text.trim();
-      if (attachments.length > 0) {
-        const filesBlock = attachments
-          .map((f) => `- ${f.localPath || f.name} (${f.category}, ${formatBytes(f.size)})`)
-          .join('\n');
-        effectivePrompt = effectivePrompt
-          ? `${effectivePrompt}\n\n[Attached Files]\n${filesBlock}`
-          : `请协助分析或处理以下文件：\n${filesBlock}`;
-      }
-
-      const historyMessages = messages
-        .slice(-16)
-        .map((m) => ({
-          role: m.role,
-          content: m.role === 'assistant' ? stripDeskProToolTags(m.content) : m.content.trim(),
-        }))
-        .filter((m) => m.content.length > 0);
-      historyMessages.push({ role: 'user', content: effectivePrompt });
-
-      const assistantMsg: AgentMessage = {
-        id: assistantMsgId,
-        role: 'assistant',
-        content: '',
-        action: parsed.action,
-        timestamp: nowTimeLabel(),
-        model: chosenModel || undefined,
-        thinking: '',
-        isStreaming: true,
-      };
-
-      activeRunRef.current = {
-        runId,
-        messageId: assistantMsgId,
-        rawText: text,
-        attachments,
-        accumulatedText: '',
-        fallbackWhisperDefaults: {
-          provider: syncedProvider,
-          preset: syncedPreset,
-          language: syncedLanguage,
-        },
-      };
-      setMessages((prev) => [...prev, userMsg, assistantMsg]);
-      setAgentSending(true);
-
-      magpieApi!
-        .send({
-          runId,
-          messages: historyMessages,
-          model: chosenModel,
-          systemPrompt: magpieStatus.settings.systemPrompt || config.llmSystemPrompt,
-        })
-        .then((res) => {
-          if (!res?.ok) {
-            activeRunRef.current = null;
-            setAgentSending(false);
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantMsgId
-                  ? {
-                      ...m,
-                      isStreaming: false,
-                      error: res?.error || TRANSLATIONS[langRef.current].toasts.magpieOffline,
-                    }
-                  : m
-              )
-            );
-          } else if (res.model) {
-            setMessages((prev) =>
-              prev.map((m) => (m.id === assistantMsgId ? { ...m, model: res.model } : m))
-            );
-          }
-        })
-        .catch((err) => {
-          activeRunRef.current = null;
-          setAgentSending(false);
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantMsgId
-                ? {
-                    ...m,
-                    isStreaming: false,
-                    error: err instanceof Error ? err.message : String(err),
-                  }
-                : m
-            )
-          );
-        });
-      return;
-    }
-
-    const assistantMsg: AgentMessage = {
-      id: assistantMsgId,
-      role: 'assistant',
-      content: parsed.reply,
-      action: parsed.action,
-      timestamp: nowTimeLabel(),
-    };
-    setMessages((prev) => [...prev, userMsg, assistantMsg]);
-
-    if (config.runtimeMode === 'custom_endpoint') {
-      setAgentSending(true);
-      callCustomLlmEndpoint(config, text, attachments, lang)
-        .then((res) => {
-          setMessages((prev) =>
-            prev.map((m) => {
-              if (m.id !== assistantMsgId) return m;
-              if (res.ok && res.content) {
-                return { ...m, content: res.content };
-              }
-              return {
-                ...m,
-                content: `${parsed.reply}${res.error ? ` (${res.error})` : ''}`,
-              };
-            })
-          );
-        })
-        .finally(() => {
-          setAgentSending(false);
-        });
-    }
+  const handleChangeLanguage = (nextLang: AppLanguage) => {
+    if (nextLang === lang) return;
+    setLang(nextLang);
+    saveLanguage(nextLang);
   };
 
-  const handleUpdateAgentAction = (
-    messageId: string,
-    updater: (action: AgentActionPayload) => AgentActionPayload
-  ) => {
-    setMessages((prev) =>
-      prev.map((msg) =>
-        msg.id === messageId && msg.action ? { ...msg, action: updater(msg.action) } : msg
-      )
-    );
-  };
+  const gpuOnline = whisperStatus.running && whisperStatus.computeStatus === 'online';
+  const statusText = gpuOnline
+    ? t.transcribe.statusGpuOnline(whisperStatus.computeGpu || 'GPU')
+    : whisperStatus.running
+      ? t.transcribe.statusServiceOnline
+      : whisperStatus.starting
+        ? t.transcribe.statusStarting
+        : t.transcribe.statusOffline;
+  const statusDot = gpuOnline
+    ? 'bg-[#16A34A]'
+    : whisperStatus.running
+      ? 'bg-[#2563EB]'
+      : whisperStatus.starting
+        ? 'bg-[#D97706]'
+        : 'bg-[#94A3B8]';
 
-  const handleDispatchAgentAction = async (messageId: string, action: AgentActionPayload) => {
-    if (action.type === 'download') {
-      const tdmApi = window.joelDesktop?.tdm;
-      if (!tdmApi || !isDesktopTdmSupported()) {
-        showToast(TRANSLATIONS[langRef.current].toasts.tdmMissingExe, 'warning');
-        setActiveView('download');
-        return;
-      }
-      const res = await tdmApi.sendUrl({
-        url: action.cleanUrl,
-        filename: action.fileName,
-      });
-      const st = await tdmApi.getStatus();
-      if (st) setTdmStatus(st);
-      if (res.ok) {
-        const taskId = `tdm-${Date.now()}`;
-        handleUpdateAgentAction(messageId, (prev) => ({
-          ...prev,
-          dispatchedTaskId: taskId,
-        }));
-        showToast(TRANSLATIONS[langRef.current].toasts.tdmDispatched, 'success');
-        setActiveView('download');
-      } else if (res.needsExe) {
-        showToast(TRANSLATIONS[langRef.current].toasts.tdmMissingExe, 'warning');
-        setActiveView('download');
-      } else {
-        showToast(res.error || TRANSLATIONS[langRef.current].toasts.tdmDispatchFailed, 'warning');
-      }
-      return;
-    }
+  return (
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#F8F9FA] text-[#0F172A]">
+      {/* Minimal Single-View Header */}
+      <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-[#E5E7EB] bg-white px-5">
+        <div className="flex items-center gap-2.5">
+          <BrandLogo size={28} />
+          <span className="text-[15px] font-semibold tracking-tight text-[#0F172A] whitespace-nowrap">
+            {t.header.appTitle}
+          </span>
+          <span className="rounded-inner bg-[#F3F4F6] px-1.5 py-0.5 font-mono text-[11px] font-medium text-[#64748B]">
+            v{APP_VERSION}
+          </span>
+        </div>
 
-    if (action.type === 'transcribe') {
-      const whisperApi = window.joelDesktop?.whisper;
-      let port = whisperStatus.port || config.whisperPort || 8788;
-
-      if (whisperApi && !whisperStatus.running) {
-        const startRes = await whisperApi.start();
-        if (startRes?.status) {
-          setWhisperStatus(startRes.status);
-          port = startRes.status.port || port;
-        }
-        if (!startRes?.ok) {
-          showToast(
-            startRes?.error || TRANSLATIONS[langRef.current].toasts.whisperBackendFailed,
-            'warning'
-          );
-          setActiveView('transcribe');
-          return;
-        }
-      }
-
-      if (!action.rawFile) {
-        setActiveView('transcribe');
-        showToast(TRANSLATIONS[langRef.current].toasts.whisperDropFilePrompt, 'neutral');
-        return;
-      }
-
-      const mappedProvider = action.provider === 'kaggle-t4' ? 'kaggle' : 'colab';
-      const mappedModel =
-        action.preset === 'fast'
-          ? 'small'
-          : action.preset === 'accurate'
-            ? 'large-v3'
-            : 'large-v3-turbo';
-
-      const uploadRes = await dispatchFileToWhisper(port, action.rawFile, {
-        provider: mappedProvider,
-        model: mappedModel,
-        language: action.language || 'auto',
-      });
-
-      if (!uploadRes.ok) {
-        showToast(
-          uploadRes.error || TRANSLATIONS[langRef.current].toasts.whisperBackendFailed,
-          'warning'
-        );
-        setActiveView('transcribe');
-        return;
-      }
-
-      handleUpdateAgentAction(messageId, (prev) => ({
-        ...prev,
-        dispatchedTaskId: `cw-${Date.now()}`,
-      }));
-      setActiveView('transcribe');
-      window.setTimeout(() => {
-        try {
-          whisperIframeRef.current?.contentWindow?.postMessage(
-            { type: 'cw-parent-cmd', cmd: 'refresh', tab: 'queue' },
-            '*'
-          );
-        } catch {}
-      }, 250);
-      showToast(
-        action.needsAudioExtract
-          ? TRANSLATIONS[langRef.current].toasts.videoAudioQueued
-          : TRANSLATIONS[langRef.current].toasts.cloudTranscribeQueued,
-        'success'
-      );
-      return;
-    }
-
-    const taskId = createConversionTask({
-      fileName: action.fileName,
-      fileSizeBytes: action.fileSizeBytes,
-      sourceFormat: action.sourceFormat,
-      targetFormat: action.targetFormat,
-      autoStart: true,
-      source: 'agent',
-    });
-
-    handleUpdateAgentAction(messageId, (prev) => ({
-      ...prev,
-      dispatchedTaskId: taskId,
-    }));
-  };
-
-  handleDispatchAgentActionRef.current = handleDispatchAgentAction;
-
-  const activeCounts = {
-    transcribe: whisperStatus.pendingTasks,
-    convert: conversions.filter((item) => item.status === 'converting').length,
-  };
-
-  // Single contextual right-side header action per workspace
-  const renderTopBarAction = () => {
-    if (activeView === 'agent' && messages.length > 0) {
-      return (
-        <button
-          type="button"
-          onClick={() => {
-            if (activeRunRef.current) {
-              window.joelDesktop?.magpie?.stop(activeRunRef.current.runId).catch(() => {});
-              activeRunRef.current = null;
-              setAgentSending(false);
-            }
-            setMessages([]);
-            showToast(t.toasts.newChatStarted);
-          }}
-          className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3.5 py-1.5 text-[12px] font-medium text-[#0F172A] hover:bg-[#F8F9FA] whitespace-nowrap shrink-0"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          {t.topbar.newChat}
-        </button>
-      );
-    }
-
-    if (activeView === 'transcribe') {
-      const gpuOnline = whisperStatus.running && whisperStatus.computeStatus === 'online';
-      const statusText = gpuOnline
-        ? t.transcribe.statusGpuOnline(whisperStatus.computeGpu || 'GPU')
-        : whisperStatus.running
-          ? t.transcribe.statusServiceOnline
-          : whisperStatus.starting
-            ? t.transcribe.statusStarting
-            : t.transcribe.statusOffline;
-      const statusDot = gpuOnline
-        ? 'bg-[#16A34A]'
-        : whisperStatus.running
-          ? 'bg-[#2563EB]'
-          : whisperStatus.starting
-            ? 'bg-[#D97706]'
-            : 'bg-[#94A3B8]';
-
-      return (
         <div className="flex items-center gap-2 shrink-0">
           <span className="inline-flex items-center gap-1.5 rounded-inner bg-[#F3F4F6] px-2.5 py-1 font-mono text-[11px] font-medium text-[#475569]">
             <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} />
             {statusText}
           </span>
+
           {whisperStatus.running && (
             <button
               type="button"
@@ -1207,6 +293,7 @@ export default function App() {
               {t.transcribe.reloadUiBtn}
             </button>
           )}
+
           {whisperStatus.supported && (
             <>
               <button
@@ -1226,265 +313,78 @@ export default function App() {
               </button>
             </>
           )}
-        </div>
-      );
-    }
 
-    if (activeView === 'download' && tdmStatus.supported && tdmStatus.exeExists) {
-      const statusText = tdmStatus.detached
-        ? t.download.statusDetached
-        : tdmStatus.attached && tdmStatus.visible && !tdmHiddenByUser
-          ? t.download.statusDocked
-          : t.download.statusHidden;
-      const statusDot =
-        tdmStatus.attached && tdmStatus.visible && !tdmHiddenByUser
-          ? 'bg-[#16A34A]'
-          : tdmStatus.running
-            ? 'bg-[#2563EB]'
-            : 'bg-[#94A3B8]';
-
-      return (
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="inline-flex items-center gap-1.5 rounded-inner bg-[#F3F4F6] px-2.5 py-1 font-mono text-[11px] font-medium text-[#475569]">
-            <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} />
-            {statusText}
-          </span>
           <button
             type="button"
-            onClick={() => handleAttachTdm(lastDownloadBoundsRef.current)}
-            className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#0F172A] hover:border-[#2563EB] hover:text-[#2563EB] whitespace-nowrap shrink-0"
+            onClick={() => {
+              setUpdateModalOpen(true);
+              handleCheckGitHubUpdate(false);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:border-[#2563EB] hover:text-[#2563EB] whitespace-nowrap shrink-0"
           >
-            <RefreshCw className="h-3.5 w-3.5" />
-            {tdmStatus.detached ? t.download.reattachBtn : t.download.resyncBtn}
-          </button>
-          {!tdmStatus.detached && tdmStatus.attached && (
-            <button
-              type="button"
-              onClick={handleDetachTdm}
-              className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3 py-1.5 text-[12px] font-medium text-[#475569] hover:bg-[#F8F9FA] hover:text-[#0F172A] whitespace-nowrap shrink-0"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              {t.download.detachBtn}
-            </button>
-          )}
-        </div>
-      );
-    }
-
-    if (activeView === 'convert' && conversions.some((c) => c.status === 'completed')) {
-      return (
-        <button
-          type="button"
-          onClick={() => {
-            setConversions((prev) => prev.filter((c) => c.status !== 'completed'));
-            showToast(t.toasts.clearedConversions);
-          }}
-          className="inline-flex items-center gap-1.5 rounded-control border border-[#E5E7EB] bg-white px-3.5 py-1.5 text-[12px] font-medium text-[#475569] hover:bg-[#F8F9FA] hover:text-[#0F172A] whitespace-nowrap shrink-0"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          {t.topbar.clearCompleted}
-        </button>
-      );
-    }
-    return null;
-  };
-
-  const keepTranscribeMounted = whisperVisited || whisperStatus.running;
-
-  return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#F8F9FA] text-[#0F172A]">
-      <Sidebar
-        lang={lang}
-        activeView={activeView}
-        onSelectView={setActiveView}
-        activeCounts={activeCounts}
-        whisperGpuOnline={whisperStatus.computeStatus === 'online'}
-        tdmRunning={tdmStatus.running}
-        hasUpdate={Boolean(updateInfo?.hasUpdate)}
-        onOpenUpdateModal={handleOpenUpdateModal}
-        mobileOpen={mobileNavOpen}
-        onCloseMobile={() => setMobileNavOpen(false)}
-      />
-
-      {/* Right Main Viewport */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* Clean Contextual Top Bar */}
-        <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-[#E5E7EB] bg-white px-5 sm:px-8">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setMobileNavOpen(true)}
-              aria-label={t.sidebar.openSidebar}
-              className="flex h-8 w-8 items-center justify-center rounded-control text-[#475569] hover:bg-[#F3F4F6] lg:hidden"
-            >
-              <Menu className="h-4 w-4" />
-            </button>
-            <h1 className="text-[15px] font-semibold tracking-tight text-[#0F172A] whitespace-nowrap">
-              {t.views[activeView]}
-            </h1>
-          </div>
-
-          <div className="flex items-center gap-2.5 shrink-0">
-            {renderTopBarAction()}
-
-            {/* Bilingual EN / 中文 Switcher */}
-            <div
-              role="group"
-              aria-label="Language"
-              className="inline-flex items-center gap-0.5 rounded-control bg-[#F3F4F6] p-0.5 shrink-0"
-            >
-              <button
-                type="button"
-                onClick={() => handleChangeLanguage('en')}
-                className={`rounded-inner px-2.5 py-1 text-[12px] font-medium transition-colors whitespace-nowrap ${
-                  lang === 'en'
-                    ? 'bg-white text-[#0F172A] shadow-xs'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
-                }`}
-              >
-                EN
-              </button>
-              <button
-                type="button"
-                onClick={() => handleChangeLanguage('zh')}
-                className={`rounded-inner px-2.5 py-1 text-[12px] font-medium transition-colors whitespace-nowrap ${
-                  lang === 'zh'
-                    ? 'bg-white text-[#0F172A] shadow-xs'
-                    : 'text-[#64748B] hover:text-[#0F172A]'
-                }`}
-              >
-                中文
-              </button>
-            </div>
-          </div>
-        </header>
-
-        {/* Active Workspace View */}
-        <main className="min-h-0 flex-1">
-          {activeView === 'agent' && (
-            <AgentView
-              lang={lang}
-              config={config}
-              magpieStatus={magpieStatus}
-              isSending={agentSending}
-              messages={messages}
-              onSendMessage={handleSendAgentMessage}
-              onUpdateAction={handleUpdateAgentAction}
-              onDispatchAction={handleDispatchAgentAction}
-              onNavigateView={setActiveView}
-              onCopyText={handleCopyText}
-              onSelectMagpieModel={handleSelectMagpieModel}
-              onRefreshMagpie={async () => {
-                await handleRefreshMagpie();
-              }}
-              onStopRun={handleStopMagpieRun}
-            />
-          )}
-
-          {keepTranscribeMounted && (
-            <div className={activeView === 'transcribe' ? 'h-full' : 'hidden'}>
-              <TranscribeView
-                lang={lang}
-                whisperStatus={whisperStatus}
-                isActive={activeView === 'transcribe'}
-                reloadNonce={whisperReloadNonce}
-                iframeRef={whisperIframeRef}
-                onStart={handleStartWhisper}
-                onRestart={handleRestartWhisper}
-                onPickDir={handlePickWhisperDir}
-                onOpenSettings={() => setActiveView('settings')}
-                onOpenStandalone={handleOpenWhisperStandalone}
-                onWhisperSnapshotSync={handleWhisperSnapshotSync}
+            <GitBranch className="h-3.5 w-3.5" />
+            <span>{t.header.updateBtn}</span>
+            {updateInfo?.hasUpdate && (
+              <span
+                title={t.header.updateAvailable}
+                className="h-1.5 w-1.5 rounded-full bg-[#2563EB]"
               />
-            </div>
-          )}
+            )}
+          </button>
 
-          {activeView === 'download' && (
-            <DownloadView
-              lang={lang}
-              config={config}
-              tdmStatus={tdmStatus}
-              hiddenByUser={tdmHiddenByUser}
-              overlayBlocking={updateModalOpen || mobileNavOpen}
-              downloadingTdm={tdmDownloading}
-              downloadError={tdmDownloadError}
-              onPickExe={handlePickTdmExe}
-              onDownloadTdm={handleDownloadTdm}
-              onAttach={handleAttachTdm}
-              onUpdateBounds={handleUpdateTdmBounds}
-              onSetVisible={handleSetTdmVisible}
-              onDetach={handleDetachTdm}
-              onRelaunch={handleRelaunchTdm}
-              onOpenSettings={() => setActiveView('settings')}
-            />
-          )}
+          <div
+            role="group"
+            aria-label="Language"
+            className="inline-flex items-center gap-0.5 rounded-control bg-[#F3F4F6] p-0.5 shrink-0"
+          >
+            <button
+              type="button"
+              onClick={() => handleChangeLanguage('en')}
+              className={`rounded-inner px-2.5 py-1 text-[12px] font-medium transition-colors whitespace-nowrap ${
+                lang === 'en'
+                  ? 'bg-white text-[#0F172A] shadow-xs'
+                  : 'text-[#64748B] hover:text-[#0F172A]'
+              }`}
+            >
+              EN
+            </button>
+            <button
+              type="button"
+              onClick={() => handleChangeLanguage('zh')}
+              className={`rounded-inner px-2.5 py-1 text-[12px] font-medium transition-colors whitespace-nowrap ${
+                lang === 'zh'
+                  ? 'bg-white text-[#0F172A] shadow-xs'
+                  : 'text-[#64748B] hover:text-[#0F172A]'
+              }`}
+            >
+              中文
+            </button>
+          </div>
+        </div>
+      </header>
 
-          {activeView === 'convert' && (
-            <ConvertView
-              lang={lang}
-              tasks={conversions}
-              onAddTask={(params) => createConversionTask({ ...params, source: 'manual' })}
-              onUpdateTargetFormat={(id, targetFormat) =>
-                setConversions((prev) =>
-                  prev.map((item) => (item.id === id ? { ...item, targetFormat } : item))
-                )
-              }
-              onStartTask={(id) =>
-                setConversions((prev) =>
-                  prev.map((item) =>
-                    item.id === id ? { ...item, status: 'converting', progress: 15 } : item
-                  )
-                )
-              }
-              onStartAllReady={() => {
-                setConversions((prev) =>
-                  prev.map((item) =>
-                    item.status === 'ready'
-                      ? { ...item, status: 'converting', progress: 15 }
-                      : item
-                  )
-                );
-                showToast(t.toasts.batchConvertStarted, 'success');
-              }}
-              onDeleteTask={(id) => setConversions((prev) => prev.filter((item) => item.id !== id))}
-            />
-          )}
-
-          {activeView === 'settings' && (
-            <SettingsView
-              lang={lang}
-              config={config}
-              magpieStatus={magpieStatus}
-              onSaveConfig={(next) => {
-                setConfig(next);
-                saveLlmConfigToStorage(next);
-                if (window.joelDesktop?.whisper && isDesktopWhisperSupported()) {
-                  window.joelDesktop.whisper
-                    .saveSettings({
-                      llm_runtime_mode: next.runtimeMode,
-                      llm_base_url: next.llmBaseUrl.trim(),
-                      llm_model: next.llmModel.trim(),
-                      llm_api_key: next.llmApiKey,
-                      llm_system_prompt: next.llmSystemPrompt,
-                    })
-                    .then((res) => {
-                      if (res?.status) setWhisperStatus(res.status);
-                    });
-                }
-                showToast(t.toasts.configSaved, 'success');
-              }}
-              onSaveMagpieSettings={handleSaveMagpieSettings}
-              onRefreshMagpie={handleRefreshMagpie}
-            />
-          )}
-        </main>
-      </div>
+      {/* Full-Width Cloud Whisper Studio Viewport */}
+      <main className="min-h-0 flex-1">
+        <TranscribeView
+          lang={lang}
+          whisperStatus={whisperStatus}
+          isActive={true}
+          reloadNonce={whisperReloadNonce}
+          iframeRef={whisperIframeRef}
+          onStart={handleStartWhisper}
+          onRestart={handleRestartWhisper}
+          onPickDir={handlePickWhisperDir}
+          onOpenStandalone={handleOpenWhisperStandalone}
+          onWhisperSnapshotSync={handleWhisperSnapshotSync}
+        />
+      </main>
 
       <UpdateModal
         lang={lang}
         open={updateModalOpen}
         onClose={() => setUpdateModalOpen(false)}
-        config={config}
+        repo={DEFAULT_GITHUB_REPO}
+        branch={DEFAULT_GITHUB_BRANCH}
         localEngineOnline={localEngineOnline}
         localEnginePackaged={localEnginePackaged}
         updateInfo={updateInfo}
@@ -1498,7 +398,6 @@ export default function App() {
         onCopyText={handleCopyText}
       />
 
-      {/* Subtle Floating Toast */}
       {toast && (
         <div
           role="status"
@@ -1512,3 +411,4 @@ export default function App() {
     </div>
   );
 }
+export default App;

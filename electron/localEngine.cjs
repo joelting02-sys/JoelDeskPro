@@ -220,7 +220,6 @@ function startLocalEngine(options = {}) {
           ok: true,
           desktop: true,
           packaged: IS_PACKAGED,
-          tdmHosted: true,
           whisperHosted: true,
         })
       );

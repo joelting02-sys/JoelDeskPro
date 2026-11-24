@@ -4,9 +4,57 @@ import { AppLanguage } from '../i18n';
 declare const __APP_VERSION__: string | undefined;
 
 export const APP_VERSION =
-  typeof __APP_VERSION__ !== 'undefined' && __APP_VERSION__ ? __APP_VERSION__ : '1.4.7';
+  typeof __APP_VERSION__ !== 'undefined' && __APP_VERSION__ ? __APP_VERSION__ : '1.5.0';
 export const DEFAULT_GITHUB_REPO = 'joelting02-sys/JoelDeskPro';
 export const DEFAULT_GITHUB_BRANCH = 'main';
+
+export interface LocalEngineStatus {
+  online: boolean;
+  desktop?: boolean;
+  packaged?: boolean;
+}
+
+export async function probeLocalEngine(port: number): Promise<LocalEngineStatus> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 1100);
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/api/health`, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    if (!res.ok) return { online: false };
+    const data = (await res.json()) as {
+      ok?: boolean;
+      desktop?: boolean;
+      packaged?: boolean;
+    };
+    return {
+      online: Boolean(data?.ok),
+      desktop: Boolean(data?.desktop),
+      packaged: Boolean(data?.packaged),
+    };
+  } catch {
+    return { online: false };
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+export function triggerClientFileDownload(
+  fileName: string,
+  content: string,
+  mimeType = 'text/plain;charset=utf-8'
+): void {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 export function compareSemver(a: string, b: string): number {
   const parse = (v: string) =>

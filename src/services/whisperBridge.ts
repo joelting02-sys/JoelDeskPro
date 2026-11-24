@@ -4,11 +4,6 @@ export interface WhisperSettings {
   whisper_port: number;
   whisper_auto_start: boolean;
   whisper_close_on_exit: boolean;
-  llm_runtime_mode?: 'mock' | 'custom_endpoint';
-  llm_base_url?: string;
-  llm_model?: string;
-  llm_api_key?: string;
-  llm_system_prompt?: string;
 }
 
 export interface WhisperStatus {
@@ -74,7 +69,13 @@ export interface WhisperDesktopApi {
 
 declare global {
   interface JoelDesktopApi {
+    isDesktop: boolean;
+    platform: string;
     whisper?: WhisperDesktopApi;
+  }
+
+  interface Window {
+    joelDesktop?: JoelDesktopApi;
   }
 }
 
